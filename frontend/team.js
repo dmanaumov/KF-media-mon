@@ -517,6 +517,7 @@ function mentionCardHtml(m) {
   ].filter(Boolean).join('  ·  ');
   return `
     <article class="card mention-card${isAlert ? ' alert' : ''}" data-id="${m.id}">
+      <button type="button" class="mention-delete" title="Удалить упоминание" aria-label="Удалить">×</button>
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
@@ -555,7 +556,23 @@ async function loadWebTab() {
   renderMentions();
 }
 
-webList.addEventListener('click', (e) => {
+webList.addEventListener('click', async (e) => {
+  const del = e.target.closest('.mention-delete');
+  if (del) {
+    e.stopPropagation();
+    const card = del.closest('.mention-card');
+    const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
+    if (!m || !selectedProjectId) return;
+    if (!window.confirm('Удалить это упоминание?')) return;
+    try {
+      await teamApi(`/mentions/${m.id}?project=${encodeURIComponent(selectedProjectId)}`, { method: 'DELETE' });
+      showToast('Упоминание удалено.');
+      await afterMentionsChanged();
+    } catch (err) {
+      showToast(err.message);
+    }
+    return;
+  }
   const card = e.target.closest('.mention-card');
   if (!card) return;
   const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
@@ -621,6 +638,7 @@ mentionSaveBtn.addEventListener('click', async () => {
 
 mentionDeleteBtn.addEventListener('click', async () => {
   if (!editingMentionId || !selectedProjectId) return;
+  if (!window.confirm('Удалить это упоминание?')) return;
   mentionDeleteBtn.disabled = true;
   try {
     await teamApi(`/mentions/${editingMentionId}?project=${encodeURIComponent(selectedProjectId)}`, { method: 'DELETE' });

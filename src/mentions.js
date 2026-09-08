@@ -121,6 +121,17 @@ async function importMentions(boardId, provider, items) {
       continue;
     }
     try {
+      // The unique index on (board_id, project_id, url) is a partial one
+      // (WHERE url != ''), so PostgreSQL does not accept it in ON CONFLICT.
+      // Check existence explicitly instead, then insert.
+      const existing = await pool.query(
+        `SELECT id FROM mentions WHERE board_id = $1 AND project_id = $2 AND url = $3 AND url != '' LIMIT 1`,
+        [boardId, projectId, url]
+      );
+      if (existing.rowCount > 0) {
+        skipped++;
+        continue;
+      }
       const params = [
         boardId,
         projectId,
@@ -135,16 +146,18 @@ async function importMentions(boardId, provider, items) {
         String(raw.sourceType || 'auto').slice(0, 50),
         normEventType(raw.eventType || raw.event_type),
       ];
-      const res = await pool.query(
+      await pool.query(
         `INSERT INTO mentions (board_id, project_id, url, source, title, published_at, sentiment, urgent, comment, created_by, source_type, event_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         ON CONFLICT (board_id, project_id, url) DO NOTHING
-         RETURNING id`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         params
       );
-      if (res.rowCount > 0) inserted++;
-      else skipped++;
+      inserted++;
     } catch (err) {
+      // Unique-violation race between our SELECT and INSERT — treat as a duplicate, not an error.
+      if (err && err.code === '23505') {
+        skipped++;
+        continue;
+      }
       console.warn('[mentions] import row failed:', err.message);
       dropped.push({ index: i, reason: 'db_error', message: err.message });
     }

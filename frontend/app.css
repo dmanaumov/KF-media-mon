@@ -161,6 +161,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .mention-card:hover{box-shadow:0 16px 34px rgba(16,45,42,.09);transform:translateY(-1px)}
 .mention-card.alert{border-color:var(--urgent);background:linear-gradient(0deg,rgba(255,95,96,.05),rgba(255,95,96,.05)),#fff}
 .mention-card.alert::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--urgent)}
+.mention-delete{position:absolute;top:8px;right:8px;z-index:2;width:22px;height:22px;line-height:1;padding:0;border:0;border-radius:50%;background:var(--line);color:#66736f;font-size:15px;cursor:pointer;opacity:.7;transition:opacity .15s ease,background .15s ease}
+.mention-delete:hover{opacity:1;background:var(--urgent);color:#fff}
 .meta h2.alert-title{color:var(--urgent)}
 
 /* --- Modals (mention editor, client card) --- */
