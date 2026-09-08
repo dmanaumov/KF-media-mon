@@ -52,7 +52,21 @@
 
       <!-- Текущие задачи -->
       <section class="tab-panel" id="panelTasks">
-        <div class="filters" id="teamFilters"></div>
+        <div class="status-filter-bar">
+          <div class="status-filter" id="statusFilterWrap">
+            <button type="button" class="status-filter-btn" id="statusFilterBtn">
+              <span id="statusFilterLabel">Статус: все</span>
+              <svg class="chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="status-filter-panel" id="statusFilterPanel" hidden>
+              <div class="status-filter-actions">
+                <button type="button" class="mini-btn" id="statusFilterAll">Выбрать все</button>
+                <button type="button" class="mini-btn" id="statusFilterNone">Снять все</button>
+              </div>
+              <div class="status-filter-list" id="statusFilterList"></div>
+            </div>
+          </div>
+        </div>
 
         <div id="teamListView">
           <div class="loading" id="teamLoading" hidden>Загружаем задачи…</div>

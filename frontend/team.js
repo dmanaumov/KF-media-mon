@@ -45,7 +45,13 @@ const webAlertBadge = document.getElementById('webAlertBadge');
 const teamLoading = document.getElementById('teamLoading');
 const teamEmpty = document.getElementById('teamEmpty');
 const teamList = document.getElementById('teamList');
-const teamFilters = document.getElementById('teamFilters');
+const statusFilterWrap = document.getElementById('statusFilterWrap');
+const statusFilterBtn = document.getElementById('statusFilterBtn');
+const statusFilterLabelEl = document.getElementById('statusFilterLabel');
+const statusFilterPanel = document.getElementById('statusFilterPanel');
+const statusFilterList = document.getElementById('statusFilterList');
+const statusFilterAll = document.getElementById('statusFilterAll');
+const statusFilterNone = document.getElementById('statusFilterNone');
 const teamCalendarToggle = document.getElementById('teamCalendarToggle');
 const teamListView = document.getElementById('teamListView');
 const teamCalendarView = document.getElementById('teamCalendarView');
@@ -238,13 +244,65 @@ function setActiveTab(tab) {
 
 // ==================== Текущие задачи ====================
 
-function renderChips() {
-  teamFilters.innerHTML = statusOptions.map(({ label }) => {
-    const key = norm(label);
-    const active = activeStatuses && activeStatuses.has(key);
-    return `<button type="button" class="filter${active ? ' active' : ''}" data-status="${esc(key)}">${esc(label)}</button>`;
-  }).join('');
+// Compact status filter: a single button opens a checkbox panel instead of
+// a wall of chips (a PR pipeline can have 7-10 statuses — chips overflowed
+// the screen and looked overwhelming).
+function updateStatusFilterLabel() {
+  const total = statusOptions.length;
+  const n = activeStatuses ? activeStatuses.size : total;
+  if (!total || n === total) statusFilterLabelEl.textContent = 'Статус: все';
+  else if (n === 0) statusFilterLabelEl.textContent = 'Статус: ничего';
+  else if (n === 1) {
+    const key = [...activeStatuses][0];
+    const found = statusOptions.find((s) => norm(s.label) === key);
+    statusFilterLabelEl.textContent = `Статус: ${found ? found.label : '1'}`;
+  } else {
+    statusFilterLabelEl.textContent = `Статус: выбрано ${n}`;
+  }
 }
+
+function renderChips() {
+  statusFilterList.innerHTML = statusOptions.map(({ label }) => {
+    const key = norm(label);
+    const checked = activeStatuses && activeStatuses.has(key);
+    return `<label class="status-filter-item"><input type="checkbox" data-status="${esc(key)}"${checked ? ' checked' : ''}><span>${esc(label)}</span></label>`;
+  }).join('');
+  updateStatusFilterLabel();
+}
+
+function closeStatusFilterPanel() {
+  statusFilterPanel.hidden = true;
+  statusFilterWrap.classList.remove('open');
+}
+
+statusFilterBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const willOpen = statusFilterPanel.hidden;
+  statusFilterPanel.hidden = !willOpen;
+  statusFilterWrap.classList.toggle('open', willOpen);
+});
+document.addEventListener('click', (e) => {
+  if (!statusFilterWrap.contains(e.target)) closeStatusFilterPanel();
+});
+statusFilterList.addEventListener('change', (e) => {
+  const cb = e.target.closest('input[type="checkbox"]');
+  if (!cb || !activeStatuses) return;
+  const key = cb.dataset.status;
+  if (cb.checked) activeStatuses.add(key);
+  else activeStatuses.delete(key);
+  updateStatusFilterLabel();
+  renderTasks();
+});
+statusFilterAll.addEventListener('click', () => {
+  activeStatuses = new Set(statusOptions.map((s) => norm(s.label)));
+  renderChips();
+  renderTasks();
+});
+statusFilterNone.addEventListener('click', () => {
+  activeStatuses = new Set();
+  renderChips();
+  renderTasks();
+});
 
 function taskCardHtml(t) {
   const chip = t.status && t.status.label ? `<span class="status ${statusClass(t.status.label)}">${esc(t.status.label)}</span>` : '';
@@ -636,16 +694,6 @@ async function init() {
 loginSubmit.addEventListener('click', login);
 [loginLogin, loginPassword].forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); }));
 document.getElementById('logoutBtn').addEventListener('click', logout);
-
-teamFilters.addEventListener('click', (e) => {
-  const chip = e.target.closest('.filter');
-  if (!chip || !activeStatuses) return;
-  const key = chip.dataset.status;
-  if (activeStatuses.has(key)) activeStatuses.delete(key);
-  else activeStatuses.add(key);
-  chip.classList.toggle('active');
-  renderTasks();
-});
 
 teamCalendarToggle.addEventListener('click', () => {
   if (teamCalendarView.hidden) openCalendar();
