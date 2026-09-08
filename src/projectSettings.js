@@ -63,7 +63,13 @@ async function getTokenUpdatedAt(boardId, projectId) {
   return rows[0] || null;
 }
 
-// --- Project "card": archive flag, client identity, speaker profile, socials ---
+// --- Project "card": archive flag, client identity, keywords, socials ---
+
+function toArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean).map(String);
+  if (typeof v === 'string') return v.split(',').map((s) => s.trim()).filter(Boolean);
+  return [];
+}
 
 function rowToSettings(row) {
   if (!row) {
@@ -76,6 +82,9 @@ function rowToSettings(row) {
       socialLinks: [],
       speakerProfile: '',
       otherInfo: '',
+      searchKeywords: [],
+      negativeKeywords: [],
+      positiveKeywords: [],
     };
   }
   let socialLinks = [];
@@ -93,6 +102,9 @@ function rowToSettings(row) {
     socialLinks,
     speakerProfile: row.speaker_profile || '',
     otherInfo: row.other_info || '',
+    searchKeywords: toArray(row.search_keywords),
+    negativeKeywords: toArray(row.negative_keywords),
+    positiveKeywords: toArray(row.positive_keywords),
   };
 }
 
@@ -105,14 +117,17 @@ async function getSettings(boardId, projectId) {
   return rowToSettings(rows[0]);
 }
 
-// boardId -> Map<projectId, settings>. Used to filter archived projects out
-// of team-facing endpoints without one query per project.
 async function listSettingsMap(boardId) {
   const pool = db.requirePool();
   const { rows } = await pool.query('SELECT * FROM project_settings WHERE board_id = $1', [boardId]);
   const map = new Map();
   rows.forEach((r) => map.set(r.project_id, rowToSettings(r)));
   return map;
+}
+
+function toPgArray(arr) {
+  const a = Array.isArray(arr) ? arr : String(arr || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return a.slice(0, 50).map((s) => String(s).trim().slice(0, 200));
 }
 
 async function saveSettings(boardId, projectId, data) {
@@ -136,6 +151,9 @@ async function saveSettings(boardId, projectId, data) {
        social_links = $8::jsonb,
        speaker_profile = $9,
        other_info = $10,
+       search_keywords = $11::text[],
+       negative_keywords = $12::text[],
+       positive_keywords = $13::text[],
        updated_at = now()
      WHERE board_id = $1 AND project_id = $2`,
     [
@@ -149,6 +167,9 @@ async function saveSettings(boardId, projectId, data) {
       JSON.stringify(socialLinks),
       String(data.speakerProfile || '').slice(0, 4000),
       String(data.otherInfo || '').slice(0, 4000),
+      toPgArray(data.searchKeywords),
+      toPgArray(data.negativeKeywords),
+      toPgArray(data.positiveKeywords),
     ]
   );
   return getSettings(boardId, projectId);

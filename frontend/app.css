@@ -161,6 +161,23 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .social-row .field-input{margin:0}
 .remove-social{color:#A12E2E;font-size:14px;padding:6px 8px}
 
+/* --- Search scenarios (the "filters" n8n runs) --- */
+.btn.small{padding:9px 12px;font-size:12.5px;width:auto;margin-top:0}
+.scenarios-panel{background:#fff;border:1px solid var(--line);border-radius:22px;padding:16px;margin-bottom:14px}
+.scenarios-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.scenarios-title{font-weight:850;font-size:14px}
+.scenario-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.scenario-row-main{flex:1;min-width:0}
+.scenario-name{font-weight:850;font-size:13.5px}
+.scenario-meta{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5;word-break:break-word}
+.scenario-row .btn{width:auto;margin-top:0}
+.tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.tag{font-size:11px;font-weight:700;background:#EEF1F0;border-radius:999px;padding:4px 9px;color:#45514E}
+.tag.neg{background:#FBE0E0;color:#A12E2E}
+.tag.pos{background:#E1F3E5;color:#216A39}
+.scenario-form .modal-row{grid-template-columns:1fr 1fr}
+.scenario-empty{font-size:12.5px;color:var(--muted);line-height:1.5}
+
 /* --- Stats chart --- */
 .chart-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:18px;margin-bottom:14px;overflow:hidden}
 .chart-card-title{font-weight:850;font-size:14px;margin-bottom:6px}
@@ -236,4 +253,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .chart-bar{fill:#31423E}
   .chart-zero{stroke:#3A403D}
   .chart-x-label{fill:#93A19C}
+  .scenarios-panel{background:#262222}
+  .tag{background:#222626;color:#B7C2BE}
+  .tag.neg{background:#2E1919;color:#E58B8B}
+  .tag.pos{background:#213626;color:#85DCA2}
 }

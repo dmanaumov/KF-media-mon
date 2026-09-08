@@ -10,6 +10,22 @@ const norm = (s) => String(s || '').trim().toLowerCase();
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const PROJECT_KEY = 'kf.team.project.v2';
+const STATUS_KEY = 'kf.team.statusFilter.v1';
+
+function loadSavedStatusFilter() {
+  try {
+    const raw = localStorage.getItem(STATUS_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveStatusFilter() {
+  try { localStorage.setItem(STATUS_KEY, JSON.stringify([...(activeStatuses || [])])); } catch (e) {}
+}
 
 let currentTasks = [];
 let activeStatuses = null;
@@ -291,16 +307,19 @@ statusFilterList.addEventListener('change', (e) => {
   if (cb.checked) activeStatuses.add(key);
   else activeStatuses.delete(key);
   updateStatusFilterLabel();
+  saveStatusFilter();
   renderTasks();
 });
 statusFilterAll.addEventListener('click', () => {
   activeStatuses = new Set(statusOptions.map((s) => norm(s.label)));
   renderChips();
+  saveStatusFilter();
   renderTasks();
 });
 statusFilterNone.addEventListener('click', () => {
   activeStatuses = new Set();
   renderChips();
+  saveStatusFilter();
   renderTasks();
 });
 
@@ -353,7 +372,17 @@ async function loadTasks() {
     teamLoading.hidden = true;
     const statuses = (data.meta && data.meta.statuses) || [];
     statusOptions = statuses;
-    if (!activeStatuses) activeStatuses = new Set(statuses.map((s) => norm(s.label)));
+    if (!activeStatuses) {
+      const saved = loadSavedStatusFilter();
+      if (saved) {
+        // Keep only statuses that still exist on the board — drops stale
+        // entries if a status was renamed/removed since the last save.
+        const validKeys = new Set(statuses.map((s) => norm(s.label)));
+        activeStatuses = new Set([...saved].filter((k) => validKeys.has(k)));
+      } else {
+        activeStatuses = new Set(statuses.map((s) => norm(s.label)));
+      }
+    }
     currentTasks = (data.tasks || []).slice().sort((a, b) => (b.deadline || '').localeCompare(a.deadline || '') || b.createAt - a.createAt);
     renderChips();
     renderTasks();
@@ -676,6 +705,151 @@ async function loadStatsTab() {
     statsEmpty.hidden = false;
   }
 }
+
+// ==================== Сценарии поиска (команда) ====================
+
+let currentScenarios = [];
+let editingScenarioId = null;
+const scenariosBtn = document.getElementById('scenariosBtn');
+const scenarioModalOverlay = document.getElementById('scenarioModalOverlay');
+const scenarioModalTitle = document.getElementById('scenarioModalTitle');
+const scnName = document.getElementById('scnName');
+const scnProject = document.getElementById('scnProject');
+const scnKeywords = document.getElementById('scnKeywords');
+const scnSources = document.getElementById('scnSources');
+const scnNegative = document.getElementById('scnNegative');
+const scnPositive = document.getElementById('scnPositive');
+const scnDays = document.getElementById('scnDays');
+const scnCancel = document.getElementById('scnCancel');
+const scnSave = document.getElementById('scnSave');
+
+function tagChips(keywords, cls) {
+  return (keywords || []).length
+    ? `<div class="tag-list">${keywords.slice(0, 20).map((k) => `<span class="tag${cls ? ' ' + cls : ''}">${esc(k)}</span>`).join('')}${keywords.length > 20 ? `<span class="tag">+${keywords.length - 20}</span>` : ''}</div>`
+    : '';
+}
+
+function openScenarioModal(scenario) {
+  scnProject.innerHTML = '<option value="">Выберите проект</option>' +
+    projects.slice().sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+      .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  editingScenarioId = scenario ? scenario.id : null;
+  scenarioModalTitle.textContent = scenario ? 'Изменить сценарий' : 'Новый сценарий';
+  scnName.value = scenario ? scenario.name : '';
+  scnProject.value = scenario ? scenario.projectId : (selectedProjectId || '');
+  scnKeywords.value = scenario ? (scenario.keywords || []).join(', ') : '';
+  scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
+  scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
+  scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
+  scenarioModalOverlay.hidden = false;
+}
+
+function closeScenarioModal() {
+  scenarioModalOverlay.hidden = true;
+  editingScenarioId = null;
+}
+
+function renderScenariosPanel(container) {
+  if (!currentScenarios.length) {
+    container.innerHTML = '<div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
+    const addBtn = container.querySelector('#addFirstScenarioBtn');
+    if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
+    return;
+  }
+  container.innerHTML =
+    '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
+    '<button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button></div>' +
+    currentScenarios.map((s) => `
+      <div class="scenario-row">
+        <div class="scenario-row-main">
+          <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
+          <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.days ? ' · последние ' + s.days + ' дн.' : ''}</div>
+          ${tagChips(s.keywords)}
+          ${tagChips(s.negativeKeywords, 'neg')}
+          ${tagChips(s.positiveKeywords, 'pos')}
+          ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button type="button" class="icon-btn" data-edit-scenario="${s.id}">Изменить</button>
+          <button type="button" class="icon-btn warn" data-del-scenario="${s.id}">Удалить</button>
+        </div>
+      </div>`).join('');
+  const addBtn = container.querySelector('#addScenarioBtn');
+  if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
+}
+
+async function loadScenarios() {
+  try {
+    const data = await teamApi('/search-scenarios');
+    currentScenarios = data.scenarios || [];
+  } catch (err) {
+    currentScenarios = [];
+    showToast('Не удалось загрузить сценарии: ' + err.message);
+  }
+}
+
+scenariosBtn.addEventListener('click', async () => {
+  await loadScenarios();
+  const panel = document.createElement('div');
+  panel.className = 'scenarios-panel';
+  panel.id = 'scenariosPanel';
+  renderScenariosPanel(panel);
+  const existing = document.getElementById('scenariosPanel');
+  if (existing) existing.remove();
+  // Вставить сразу после <header> — панель видна над табами
+  const header = document.querySelector('header.head');
+  header.after(panel);
+  panel.addEventListener('click', async (e) => {
+    const edit = e.target.closest('[data-edit-scenario]');
+    const del = e.target.closest('[data-del-scenario]');
+    if (edit) {
+      const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
+      openScenarioModal(s);
+      return;
+    }
+    if (del && confirm('Удалить сценарий?')) {
+      try {
+        await teamApi(`/search-scenarios/${del.dataset.delScenario}`, { method: 'DELETE' });
+        showToast('Сценарий удалён.');
+        await loadScenarios();
+        renderScenariosPanel(panel);
+      } catch (err) {
+        showToast(err.message);
+      }
+    }
+  });
+});
+
+scnCancel.addEventListener('click', closeScenarioModal);
+scenarioModalOverlay.addEventListener('click', (e) => { if (e.target === scenarioModalOverlay) closeScenarioModal(); });
+
+scnSave.addEventListener('click', async () => {
+  const projectId = scnProject.value;
+  if (!projectId) { showToast('Выберите проект.'); return; }
+  const split = (v) => v.split(',').map((s) => s.trim()).filter(Boolean);
+  const body = {
+    projectId,
+    name: scnName.value.trim(),
+    keywords: split(scnKeywords.value),
+    sources: split(scnSources.value),
+    negativeKeywords: split(scnNegative.value),
+    positiveKeywords: split(scnPositive.value),
+  };
+  scnSave.disabled = true;
+  try {
+    const path = editingScenarioId ? `/search-scenarios/${editingScenarioId}` : '/search-scenarios';
+    await teamApi(path, { method: editingScenarioId ? 'PUT' : 'POST', body });
+    showToast('Сценарий сохранён.');
+    closeScenarioModal();
+    await loadScenarios();
+    const panel = document.getElementById('scenariosPanel');
+    if (panel) renderScenariosPanel(panel);
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    scnSave.disabled = false;
+  }
+});
 
 // ==================== Init ====================
 

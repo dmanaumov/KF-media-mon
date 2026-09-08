@@ -41,6 +41,9 @@ async function initSchema() {
   await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS social_links jsonb NOT NULL DEFAULT '[]'::jsonb;`);
   await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS speaker_profile text NOT NULL DEFAULT '';`);
   await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS other_info text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS search_keywords text[] NOT NULL DEFAULT '{}';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS negative_keywords text[] NOT NULL DEFAULT '{}';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS positive_keywords text[] NOT NULL DEFAULT '{}';`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS team_sessions (
@@ -83,6 +86,32 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS mentions_project_idx ON mentions (board_id, project_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS mentions_published_idx ON mentions (published_at);`);
+  await pool.query(`ALTER TABLE mentions ADD COLUMN IF NOT EXISTS source_type text NOT NULL DEFAULT 'manual';`);
+  await pool.query(`ALTER TABLE mentions ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mentions_url_unique ON mentions (board_id, project_id, url) WHERE url != '';`);
+
+  // Search scenarios — the "filters" a user configures from the team cabinet
+  // (project + keywords + sources/links). These are executed externally by
+  // n8n via POST /api/cron/search-news; the app only stores and displays
+  // the results that that run persists into `mentions` (source_type='auto').
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS search_scenarios (
+      id bigserial PRIMARY KEY,
+      board_id text NOT NULL,
+      project_id text NOT NULL,
+      name text NOT NULL DEFAULT '',
+      keywords text[] NOT NULL DEFAULT '{}',
+      sources text[] NOT NULL DEFAULT '{}',
+      negative_keywords text[] NOT NULL DEFAULT '{}',
+      positive_keywords text[] NOT NULL DEFAULT '{}',
+      archived boolean NOT NULL DEFAULT false,
+      created_by text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_board_idx ON search_scenarios (board_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_project_idx ON search_scenarios (board_id, project_id);`);
 }
 
 module.exports = { pool, requirePool, initSchema };

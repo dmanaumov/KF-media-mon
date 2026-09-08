@@ -8,6 +8,8 @@ const teamAuth = require('./teamAuth');
 const projectSettings = require('./projectSettings');
 const mentions = require('./mentions');
 const { buildTasks, projectOptions, statusOptions } = require('./taskMapper');
+const newsSearcher = require('./newsSearcher');
+const scenarios = require('./scenarios');
 
 const app = express();
 app.use(compression());
@@ -298,6 +300,112 @@ app.put('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, as
     res.json({ settings });
   } catch (err) {
     console.error('[api] admin settings PUT failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Ingest: search results from an external system (n8n) ---
+// POST /api/cron/mentions  with header  X-Cron-Secret: <CRON_SECRET>
+// The external system does the searching; the app only persists the findings
+// into `mentions` in the exact shape the WEB tab renders. Idempotent: rows
+// with the same (project, url) are skipped on re-run.
+// Body: { items: [ { projectId?, url, source?, title?, publishedAt?,
+//                    sentiment?, urgent?, comment?, sourceType? } ] }
+// `projectId` may also be given at top level and inherited by all items.
+app.post('/api/cron/mentions', async (req, res) => {
+  const secret = config.cronSecret;
+  if (!secret || req.get('X-Cron-Secret') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Cron-Secret.' });
+  }
+  const body = req.body || {};
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) {
+    return res.status(400).json({ error: 'empty_items', message: 'Body must contain non-empty "items" array.' });
+  }
+  if (items.length > 500) {
+    return res.status(400).json({ error: 'too_many_items', message: 'Max 500 items per request.' });
+  }
+  const provider = {
+    name: String(body.providerName || body.provider || '').trim().slice(0, 200) || 'n8n',
+    projectId: body.projectId != null ? String(body.projectId) : undefined,
+  };
+  try {
+    const result = await mentions.importMentions(config.mattermostBoardId, provider, items);
+    res.json({ ok: true, inserted: result.inserted, skipped: result.skipped, dropped: result.dropped });
+  } catch (err) {
+    console.error('[api] /api/cron/mentions failed:', err.message);
+    res.status(502).json({ error: 'import_failed', message: err.message });
+  }
+});
+
+// --- Cron: nightly news search (called by n8n, not by the browser) ---
+// POST /api/cron/search-news  with header  X-Cron-Secret: <CRON_SECRET>
+// Runs every active search scenario (project + keywords + sources) for the
+// last N days and stores matches in `mentions` (source_type='auto_search').
+// The app itself only reads and displays; all searching is delegated to n8n.
+app.post('/api/cron/search-news', async (req, res) => {
+  const secret = config.cronSecret;
+  if (!secret || req.get('X-Cron-Secret') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Cron-Secret.' });
+  }
+  const days = parseInt(req.body && req.body.days, 10) || 7;
+  if (days < 1 || days > 30) {
+    return res.status(400).json({ error: 'bad_days', message: 'days must be between 1 and 30.' });
+  }
+  try {
+    const active = await scenarios.listActiveScenarios(config.mattermostBoardId);
+    const summary = await newsSearcher.runScenarios(config.mattermostBoardId, active, { days, createdBy: 'n8n-cron' });
+    const totalInserted = summary.reduce((a, s) => a + (s.inserted || 0), 0);
+    res.json({ ok: true, days, scenarios: active.length, inserted: totalInserted, summary });
+  } catch (err) {
+    console.error('[api] /api/cron/search-news failed:', err.message);
+    res.status(502).json({ error: 'search_failed', message: err.message });
+  }
+});
+
+// --- Team cabinet: search scenarios (the "filters" n8n runs) ---
+app.get('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const list = await scenarios.listScenarios(config.mattermostBoardId);
+    res.json({ scenarios: list });
+  } catch (err) {
+    console.error('[api] /api/team/search-scenarios GET failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.post('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
+  const projectId = String((req.body && req.body.projectId) || '').trim();
+  if (!projectId) return res.status(400).json({ error: 'missing_project', message: 'Выберите проект.' });
+  try {
+    const user = (req.teamSession && req.teamSession.user) || {};
+    const createdBy = user.username || user.email || '';
+    const s = await scenarios.createScenario(config.mattermostBoardId, projectId, req.body || {}, createdBy);
+    res.json({ scenario: s });
+  } catch (err) {
+    console.error('[api] /api/team/search-scenarios POST failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.put('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const s = await scenarios.updateScenario(req.params.id, config.mattermostBoardId, req.body || {});
+    if (!s) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
+    res.json({ scenario: s });
+  } catch (err) {
+    console.error('[api] /api/team/search-scenarios PUT failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const ok = await scenarios.deleteScenario(req.params.id, config.mattermostBoardId);
+    if (!ok) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] /api/team/search-scenarios DELETE failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
 });

@@ -87,6 +87,63 @@ async function deleteMention(id, boardId, projectId) {
   return rowCount > 0;
 }
 
+// Ingest a batch of search results from an external system (n8n). Each item
+// is validated/normalized before insert; rows whose (board_id, project_id,
+// url) already exist are skipped, so re-runs of the same feed are idempotent.
+// Returns { inserted, skipped, dropped } — dropped entries carry a reason for
+// anything the endpoint could not store.
+async function importMentions(boardId, provider, items) {
+  const pool = db.requirePool();
+  const createdBy = String((provider && provider.name) || 'external');
+
+  let inserted = 0;
+  let skipped = 0;
+  const dropped = [];
+
+  for (let i = 0; i < (items || []).length; i++) {
+    const raw = items[i] || {};
+    const projectId = String(raw.projectId != null && raw.projectId !== '' ? raw.projectId : (provider || {}).projectId || '').trim();
+    const url = String(raw.url || '').trim().slice(0, 1000);
+    if (!projectId) {
+      dropped.push({ index: i, reason: 'missing_projectId' });
+      continue;
+    }
+    if (!url) {
+      dropped.push({ index: i, reason: 'missing_url' });
+      continue;
+    }
+    try {
+      const params = [
+        boardId,
+        projectId,
+        url,
+        String(raw.source || '').trim().slice(0, 300),
+        String(raw.title || raw.comment || '').trim().slice(0, 500),
+        raw.publishedAt || raw.published_at || null,
+        normSentiment(raw.sentiment),
+        !!raw.urgent,
+        String(raw.comment || raw.snippet || '').trim().slice(0, 4000),
+        createdBy,
+        String(raw.sourceType || 'auto').slice(0, 50),
+      ];
+      const res = await pool.query(
+        `INSERT INTO mentions (board_id, project_id, url, source, title, published_at, sentiment, urgent, comment, created_by, source_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (board_id, project_id, url) DO NOTHING
+         RETURNING id`,
+        params
+      );
+      if (res.rowCount > 0) inserted++;
+      else skipped++;
+    } catch (err) {
+      console.warn('[mentions] import row failed:', err.message);
+      dropped.push({ index: i, reason: 'db_error', message: err.message });
+    }
+  }
+
+  return { inserted, skipped, dropped };
+}
+
 // Monthly rollup for the "Статистика" tab. mediaIndex is a simple net-sentiment
 // score (positive count minus negative count) per month — transparent and
 // cheap to compute from manually-tagged mentions; can be swapped for a
@@ -115,4 +172,4 @@ async function monthlyStats(boardId, projectId) {
   });
 }
 
-module.exports = { listMentions, createMention, updateMention, deleteMention, monthlyStats, SENTIMENTS };
+module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, SENTIMENTS };
