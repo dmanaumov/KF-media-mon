@@ -712,6 +712,7 @@ async function loadStatsTab() {
 let currentScenarios = [];
 let editingScenarioId = null;
 const scenariosBtn = document.getElementById('scenariosBtn');
+const scenariosPanel = document.getElementById('scenariosPanel');
 const scenarioModalOverlay = document.getElementById('scenarioModalOverlay');
 const scenarioModalTitle = document.getElementById('scenarioModalTitle');
 const scnName = document.getElementById('scnName');
@@ -791,52 +792,39 @@ async function loadScenarios() {
 }
 
 function hideScenariosPanel() {
-  const panel = document.getElementById('scenariosPanel');
-  if (panel) panel.hidden = true;
-}
-
-function getScenariosPanel() {
-  let panel = document.getElementById('scenariosPanel');
-  if (!panel) {
-    panel = document.createElement('div');
-    panel.className = 'scenarios-panel';
-    panel.id = 'scenariosPanel';
-    webList.before(panel);
-    panel.addEventListener('click', async (e) => {
-      const edit = e.target.closest('[data-edit-scenario]');
-      const del = e.target.closest('[data-del-scenario]');
-      const close = e.target.closest('[data-close-scenarios]');
-      if (close) { hideScenariosPanel(); return; }
-      if (edit) {
-        const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
-        openScenarioModal(s);
-        return;
-      }
-      if (del && confirm('Удалить сценарий?')) {
-        try {
-          await teamApi(`/search-scenarios/${del.dataset.delScenario}`, { method: 'DELETE' });
-          showToast('Сценарий удалён.');
-          await loadScenarios();
-          renderScenariosPanel(panel);
-        } catch (err) {
-          showToast(err.message);
-        }
-      }
-    });
-  }
-  return panel;
+  scenariosPanel.hidden = true;
 }
 
 scenariosBtn.addEventListener('click', async () => {
-  const existing = document.getElementById('scenariosPanel');
-  if (existing && !existing.hidden) {
-    hideScenariosPanel();
+  if (!scenariosPanel.hidden) {
+    scenariosPanel.hidden = true;
     return;
   }
   await loadScenarios();
-  const panel = getScenariosPanel();
-  panel.hidden = false;
-  renderScenariosPanel(panel);
+  scenariosPanel.hidden = false;
+  renderScenariosPanel(scenariosPanel);
+});
+
+scenariosPanel.addEventListener('click', async (e) => {
+  const close = e.target.closest('[data-close-scenarios]');
+  const edit = e.target.closest('[data-edit-scenario]');
+  const del = e.target.closest('[data-del-scenario]');
+  if (close) { hideScenariosPanel(); return; }
+  if (edit) {
+    const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
+    openScenarioModal(s);
+    return;
+  }
+  if (del && confirm('Удалить сценарий? Останется ли у проекта его настройка — проверьте.')) {
+    try {
+      await teamApi(`/search-scenarios/${del.dataset.delScenario}`, { method: 'DELETE' });
+      showToast('Сценарий удалён.');
+      await loadScenarios();
+      renderScenariosPanel(scenariosPanel);
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
 });
 
 scnCancel.addEventListener('click', closeScenarioModal);

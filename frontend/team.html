@@ -4,11 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PR-кабинет</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
   <div class="page">
     <div class="login-box" id="loginApp" hidden>
+      <div class="brand-mark-lg">КФ</div>
       <div class="brand-title">PR-кабинет</div>
       <p class="login-intro">Вход через аккаунт Mattermost</p>
       <div>
@@ -26,9 +30,12 @@
     <div id="teamApp" hidden>
       <header class="head">
         <div class="head-top">
-          <div style="min-width:0">
-            <div class="brand-title">PR-кабинет</div>
-            <div class="brand-sub" id="teamUserName">Команда</div>
+          <div class="brand-row" style="min-width:0">
+            <div class="brand-mark">КФ</div>
+            <div style="min-width:0">
+              <div class="brand-title">PR-кабинет</div>
+              <div class="brand-sub" id="teamUserName">Команда</div>
+            </div>
           </div>
           <div class="head-right">
             <button class="cal-toggle" id="teamCalendarToggle" title="Календарь" aria-label="Календарь">🗓️</button>
@@ -97,6 +104,7 @@
             <button type="button" class="btn small" id="scenariosBtn">⚙ Сценарии поиска</button>
           </div>
         </div>
+        <div class="scenarios-panel" id="scenariosPanel" hidden></div>
         <div class="loading" id="webLoading" hidden>Загружаем упоминания…</div>
         <div class="stack" id="webList"></div>
         <div class="empty" id="webEmpty" hidden></div>
