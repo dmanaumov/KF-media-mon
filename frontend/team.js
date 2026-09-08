@@ -201,6 +201,17 @@ function deadlineLabel(dateStr) {
   return `${+m[3]} ${MONTHS_RU[+m[2] - 1]}`;
 }
 
+// Days from today until the deadline (dates are plain YYYY-MM-DD, compared in UTC).
+// Returns null when absent/invalid, negative when the deadline already passed.
+function daysToDeadline(dateStr) {
+  const m = dateStr && dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const due = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((due - today) / 86400000);
+}
+
 // ==================== Project switcher ====================
 
 function projectLabelFor(id) {
@@ -333,16 +344,20 @@ statusFilterNone.addEventListener('click', () => {
 
 function taskCardHtml(t) {
   const chip = t.status && t.status.label ? `<span class="status ${statusClass(t.status.label)}">${esc(t.status.label)}</span>` : '';
+  const due = daysToDeadline(t.deadline);
+  const burning = due !== null && due >= 0 && due <= 3;
+  const overdue = due !== null && due < 0;
+  const cardClass = overdue ? 'card overdue' : burning ? 'card burning' : 'card';
   const metaBits = [
     !selectedProjectId && t.project && t.project.label ? `${esc(t.project.label)}` : '',
     t.smi ? `📰 ${esc(t.smi)}` : '',
     t.type ? `${esc(t.type)}` : '',
     t.priority ? `⚑ ${esc(t.priority)}` : '',
-    t.deadline ? `🗓 ${deadlineLabel(t.deadline)}` : '',
+    t.deadline ? `${burning ? '🔥 ' : ''}🗓 ${deadlineLabel(t.deadline)}` : '',
   ].filter(Boolean).join('  ·  ');
   const reach = t.uvm ? `Охват: <b>${formatReach(t.uvm)}</b>` : '';
   return `
-    <article class="card">
+    <article class="${cardClass}">
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}

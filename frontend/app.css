@@ -163,6 +163,9 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .mention-card.alert::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--urgent)}
 .mention-delete{position:absolute;top:8px;right:8px;z-index:2;width:22px;height:22px;line-height:1;padding:0;border:0;border-radius:50%;background:var(--line);color:#66736f;font-size:15px;cursor:pointer;opacity:.7;transition:opacity .15s ease,background .15s ease}
 .mention-delete:hover{opacity:1;background:var(--urgent);color:#fff}
+
+.card.burning{border-color:#F2B21B;box-shadow:0 8px 26px rgba(242,178,27,.16)}
+.card.overdue{border-color:var(--urgent);background:linear-gradient(0deg,rgba(255,95,96,.3),rgba(255,95,96,.3)),#fff}
 .meta h2.alert-title{color:var(--urgent)}
 
 /* --- Modals (mention editor, client card) --- */
@@ -300,6 +303,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .btn.ghost:hover{background:#2A302D}
   .btn.ghost.warn{background:#2E1919;color:#E58B8B}
   .mention-card.alert{background:linear-gradient(0deg,rgba(255,95,96,.08),rgba(255,95,96,.08)),#262222}
+  .card.burning{background:linear-gradient(0deg,rgba(242,178,27,.12),rgba(242,178,27,.12)),#262222}
+  .card.overdue{background:linear-gradient(0deg,rgba(255,95,96,.3),rgba(255,95,96,.3)),#262222}
   .modal-card{background:#1B2320;border-color:#2A3532}
   .chart-card{background:#262222}
   .chart-bar{fill:#31423E}
