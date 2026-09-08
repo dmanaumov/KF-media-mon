@@ -16,6 +16,9 @@ function usingSessionLogin() {
 
 function assertConfigured() {
   if (!config.mattermostUrl) throw new Error('MATTERMOST_URL is not configured');
+  if (config.mattermostLoginId && !config.mattermostPassword) {
+    throw new Error('MATTERMOST_LOGIN_ID set but MATTERMOST_PASSWORD is missing — set both, or use MATTERMOST_TOKEN');
+  }
   if (!usingSessionLogin() && !config.mattermostToken) {
     throw new Error('Neither MATTERMOST_TOKEN nor MATTERMOST_LOGIN_ID/MATTERMOST_PASSWORD are configured');
   }

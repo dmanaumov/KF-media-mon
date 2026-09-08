@@ -3,7 +3,7 @@ require('dotenv').config();
 module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
 
-  mattermostUrl: (process.env.MATTERMOST_URL || '').replace(/\/+$/, ''),
+  mattermostUrl: (process.env.MATTERMOST_URL || '').replace(/#+\/?$/, '').replace(/\/+$/, ''),
   mattermostLoginId: process.env.MATTERMOST_LOGIN_ID || '',
   mattermostPassword: process.env.MATTERMOST_PASSWORD || '',
   mattermostToken: process.env.MATTERMOST_TOKEN || '',
