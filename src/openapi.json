@@ -1,0 +1,559 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PR-мониторинг API",
+    "description": "API веб-интерфейса команды: факты публикаций, перепечатки, охват, автоматический поиск упоминаний.\n\nАвтоматизация (n8n) использует эндпоинты `/api/cron/*` — они защищены заголовком `X-Automation-Api-Key`. Кабинет команды и админ-панель (`/api/team/*`, `/api/admin/*`) работают через cookie-сессию Mattermost.",
+    "version": "0.1.0"
+  },
+  "servers": [{ "url": "/" }],
+  "security": [{ "automationApiKey": [] }],
+  "tags": [
+    { "name": "Автоматизация", "description": "Машинные эндпоинты для внешних систем (n8n). Защита: заголовок X-Automation-Api-Key." },
+    { "name": "Кабинет команды", "description": "Вкладки «Текущие задачи», «WEB», «Статистика». Защита: cookie-сессия Mattermost." },
+    { "name": "Администрирование", "description": "Настройка проектов, ссылки клиентов, карточки клиентов. Требуются права админа." },
+    { "name": "Клиентский кабинет", "description": "Анонимные ссылки клиентов на факты публикаций." }
+  ],
+  "paths": {
+    "/api/cron/scenarios": {
+      "get": {
+        "tags": ["Автоматизация"],
+        "summary": "Актуальные сценарии поиска",
+        "description": "Возвращает только активные (не архивные) сценарии поиска — «фильтры», которые автоматизация должна выполнять. Сценарий: ключевые слова, источники/ссылки, позитивные и негативные ключи. Затем найденные материалы можно разместить через POST /api/cron/mentions.",
+        "security": [{ "automationApiKey": [] }],
+        "responses": {
+          "200": {
+            "description": "Список активных сценариев",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenariosResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/cron/mentions": {
+      "post": {
+        "tags": ["Автоматизация"],
+        "summary": "Разместить найденные материалы",
+        "description": "Размещает найденные автоматизацией материалы в БД. Заголовок и краткая информация — отдельные поля (`title`, `comment`). Идемпотентно: при повторе строки с тем же (projectId, url) пропускаются. `projectId` можно задать один раз на уровне body — унаследуется всеми items.",
+        "security": [{ "automationApiKey": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ImportMentionsRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат импорта",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportMentionsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/SearchFailed" }
+        }
+      }
+    },
+    "/api/cron/search-news": {
+      "post": {
+        "tags": ["Автоматизация"],
+        "summary": "Выполнить сценарии поиска (сборка новостей на сервере)",
+        "description": "Запускает все активные сценарии поиска за последние N дней и сохраняет совпадения в БД (source_type='auto_search'). Используется, когда поиск выполняет само приложение; обычно автоматизация сама ищет в Google News RSS и отдаёт результат через POST /api/cron/mentions.",
+        "security": [{ "automationApiKey": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/SearchNewsRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сводка по сценариям",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchNewsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/SearchFailed" }
+        }
+      }
+    },
+    "/api/team/login": {
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Вход в кабинет",
+        "description": "Авторизация по логину/паролю Mattermost. Устанавливает cookie-сессию. Или с PAT-токеном (login_id + password с паспортом) — зависит от настроек сервера.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный вход",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MeResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "description": "Неверный логин или пароль" }
+        }
+      }
+    },
+    "/api/team/logout": {
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Выход из кабинета",
+        "responses": {
+          "200": { "description": "Сессия закрыта", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } }
+        }
+      }
+    },
+    "/api/team/me": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Текущий пользователь",
+        "responses": {
+          "200": {
+            "description": "Данные пользователя и доступы",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MeResponse" } } }
+          },
+          "401": { "description": "Нет сессии" }
+        }
+      }
+    },
+    "/api/team/projects": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Список проектов (без архивных)",
+        "responses": {
+          "200": { "description": "Проекты борда", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectsResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/MattermostError" }
+        }
+      }
+    },
+    "/api/team/tasks": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Задачи команды",
+        "description": "Задачи и факты публикаций. Параметры: project (id проекта), fact=1 (только факты публикаций), status (подстрока статуса).",
+        "parameters": [
+          { "name": "project", "in": "query", "schema": { "type": "string" }, "description": "ID проекта. Пусто — все проекты." },
+          { "name": "fact", "in": "query", "schema": { "type": "string", "enum": ["0", "1"] }, "description": "Если 1 — только опубликованные факты." },
+          { "name": "status", "in": "query", "schema": { "type": "string" }, "description": "Фильтр по статусу (подстрока)." }
+        ],
+        "responses": {
+          "200": { "description": "Задачи", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TasksResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/MattermostError" }
+        }
+      }
+    },
+    "/api/team/search-scenarios": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Сценарии поиска (все)",
+        "responses": {
+          "200": { "description": "Сценарии", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenariosResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Создать сценарий поиска",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenarioInput" } } }
+        },
+        "responses": {
+          "200": { "description": "Созданный сценарий", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenarioResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/search-scenarios/{id}": {
+      "put": {
+        "tags": ["Кабинет команды"],
+        "summary": "Обновить сценарий поиска",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenarioInput" } } }
+        },
+        "responses": {
+          "200": { "description": "Обновлённый сценарий", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScenarioResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Сценарий не найден" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "delete": {
+        "tags": ["Кабинет команды"],
+        "summary": "Удалить сценарий поиска",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Удалён", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Сценарий не найден" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/mentions": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Упоминания проекта (вкладка WEB)",
+        "parameters": [{ "name": "project", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Список упоминаний", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionsResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Создать упоминание вручную",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionInput" } } }
+        },
+        "responses": {
+          "200": { "description": "Созданное упоминание", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/mentions/{id}": {
+      "put": {
+        "tags": ["Кабинет команды"],
+        "summary": "Обновить упоминание",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "project", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionInput" } } }
+        },
+        "responses": {
+          "200": { "description": "Обновлённое упоминание", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Упоминание не найдено" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "delete": {
+        "tags": ["Кабинет команды"],
+        "summary": "Удалить упоминание",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "project", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Удалено", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Упоминание не найдено" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/mentions/stats": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Помесячная статистика упоминаний",
+        "parameters": [{ "name": "project", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Статистика", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MentionsStatsResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/links/{token}": {
+      "get": {
+        "tags": ["Клиентский кабинет"],
+        "summary": "По токену ссылки клиента — имя проекта",
+        "parameters": [{ "name": "token", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Проект",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "boardId": { "type": "string" }, "projectId": { "type": "string" }, "name": { "type": "string" } } } } }
+          },
+          "404": { "description": "Ссылка недействительна" },
+          "502": { "$ref": "#/components/responses/MattermostError" }
+        }
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "tags": ["Клиентский кабинет"],
+        "summary": "Факты публикаций клиента",
+        "parameters": [{ "name": "project", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Факты", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TasksResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "description": "Проект не найден" },
+          "502": { "$ref": "#/components/responses/MattermostError" }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "tags": ["Администрирование"],
+        "summary": "Проекты и ссылки клиентов (админ)",
+        "responses": {
+          "200": { "description": "Проекты со ссылками", "content": { "application/json": { "schema": { "type": "object", "properties": { "projects": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProject" } }, "statuses": { "$ref": "#/components/schemas/StatusOptions" } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/MattermostError" }
+        }
+      }
+    },
+    "/api/projects/{projectId}/regenerate-link": {
+      "post": {
+        "tags": ["Администрирование"],
+        "summary": "Перегенерировать ссылку клиента",
+        "parameters": [{ "name": "projectId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Новый токен",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "token": { "type": "string" }, "link": { "type": "string", "example": "/l/abc123" } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/admin/projects/{projectId}/settings": {
+      "get": {
+        "tags": ["Администрирование"],
+        "summary": "Настройки/карточка клиента",
+        "parameters": [{ "name": "projectId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Настройки",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "settings": { "$ref": "#/components/schemas/ProjectSettings" } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "put": {
+        "tags": ["Администрирование"],
+        "summary": "Сохранить настройки клиента",
+        "parameters": [{ "name": "projectId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectSettings" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Сохранено",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "settings": { "$ref": "#/components/schemas/ProjectSettings" } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "automationApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Automation-Api-Key"
+      }
+    },
+    "responses": {
+      "Unauthorized": { "description": "Нет авторизации (неверный ключ автоматизации или отсутствует сессия)" },
+      "BadRequest": { "description": "Ошибка запроса" },
+      "DbError": { "description": "Ошибка базы данных", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } },
+      "MattermostError": { "description": "Mattermost недоступен", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } },
+      "SearchFailed": { "description": "Ошибка при импорте/поиске", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } }
+    },
+    "schemas": {
+      "Ok": { "type": "object", "properties": { "ok": { "type": "boolean" } } },
+      "Scenario": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "projectId": { "type": "string" },
+          "name": { "type": "string" },
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "sources": { "type": "array", "items": { "type": "string" } },
+          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
+          "positiveKeywords": { "type": "array", "items": { "type": "string" } },
+          "archived": { "type": "boolean" },
+          "createdBy": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        }
+      },
+      "ScenarioInput": {
+        "type": "object",
+        "required": ["projectId", "name"],
+        "properties": {
+          "projectId": { "type": "string" },
+          "name": { "type": "string" },
+          "keywords": { "type": "array", "items": { "type": "string" } },
+          "sources": { "type": "array", "items": { "type": "string" } },
+          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
+          "positiveKeywords": { "type": "array", "items": { "type": "string" } },
+          "archived": { "type": "boolean" }
+        }
+      },
+      "ScenarioResponse": { "type": "object", "properties": { "scenario": { "$ref": "#/components/schemas/Scenario" } } },
+      "ScenariosResponse": {
+        "type": "object",
+        "properties": {
+          "boardId": { "type": "string", "description": "Только в /api/cron/scenarios" },
+          "scenarios": { "type": "array", "items": { "$ref": "#/components/schemas/Scenario" } }
+        }
+      },
+      "Mention": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "url": { "type": "string" },
+          "source": { "type": "string" },
+          "title": { "type": "string" },
+          "publishedAt": { "type": "string", "format": "date" },
+          "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+          "urgent": { "type": "boolean" },
+          "comment": { "type": "string", "description": "Краткая информация/сниппет" },
+          "createdBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MentionInput": {
+        "type": "object",
+        "properties": {
+          "project": { "type": "string", "description": "ID проекта; для GET/PUT/DELETE — в query" },
+          "url": { "type": "string" },
+          "source": { "type": "string" },
+          "title": { "type": "string" },
+          "publishedAt": { "type": "string", "format": "date" },
+          "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+          "urgent": { "type": "boolean" },
+          "comment": { "type": "string" }
+        }
+      },
+      "MentionResponse": { "type": "object", "properties": { "mention": { "$ref": "#/components/schemas/Mention" } } },
+      "MentionsResponse": { "type": "object", "properties": { "mentions": { "type": "array", "items": { "$ref": "#/components/schemas/Mention" } } } },
+      "ImportItem": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "projectId": { "type": "string", "description": "Можно не указывать, если задан на уровне body" },
+          "url": { "type": "string", "description": "Ссылка на материал — ключ дедупликации" },
+          "source": { "type": "string", "description": "СМИ/источник" },
+          "title": { "type": "string", "description": "Заголовок материала" },
+          "comment": { "type": "string", "description": "Краткая информация/сниппет" },
+          "publishedAt": { "type": "string", "format": "date", "example": "2026-09-08" },
+          "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+          "urgent": { "type": "boolean" },
+          "sourceType": { "type": "string", "default": "auto" }
+        }
+      },
+      "ImportMentionsRequest": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/ImportItem" }
+          },
+          "providerName": { "type": "string", "default": "n8n", "description": "Кто разместил (visible createdBy)" },
+          "projectId": { "type": "string", "description": "Общий проект для всех items" }
+        }
+      },
+      "ImportMentionsResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "inserted": { "type": "integer" },
+          "skipped": { "type": "integer" },
+          "dropped": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "index": { "type": "integer" }, "reason": { "type": "string" }, "message": { "type": "string" } } }
+          }
+        }
+      },
+      "SearchNewsRequest": {
+        "type": "object",
+        "properties": {
+          "days": { "type": "integer", "minimum": 1, "maximum": 30, "default": 7, "example": 7 }
+        }
+      },
+      "SearchNewsResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "days": { "type": "integer" },
+          "scenarios": { "type": "integer" },
+          "inserted": { "type": "integer" },
+          "summary": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "scenarioId": { "type": "integer" }, "projectId": { "type": "string" }, "found": { "type": "integer" }, "inserted": { "type": "integer" }, "skipped": { "type": "boolean" }, "error": { "type": "string" } } }
+          }
+        }
+      },
+      "LoginRequest": { "type": "object", "required": ["login_id", "password"], "properties": { "login_id": { "type": "string" }, "password": { "type": "string" } } },
+      "MeResponse": {
+        "type": "object",
+        "properties": { "user": { "type": "object" }, "role": { "type": "object" }, "access": { "type": "object", "properties": { "admin": { "type": "boolean" }, "staffProjectsPath": { "type": "string" } } } }
+      },
+      "Project": { "type": "object", "properties": { "id": { "type": "string" }, "label": { "type": "string" } } },
+      "ProjectsResponse": { "type": "object", "properties": { "projects": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } } } },
+      "TasksResponse": { "type": "object", "properties": { "tasks": { "type": "array", "items": { "type": "object" } }, "meta": { "type": "object" } } },
+      "MentionsStatsResponse": {
+        "type": "object",
+        "properties": {
+          "stats": {
+            "type": "array",
+            "items": { "type": "object", "properties": { "month": { "type": "string", "example": "2026-08" }, "positive": { "type": "integer" }, "neutral": { "type": "integer" }, "negative": { "type": "integer" }, "total": { "type": "integer" }, "mediaIndex": { "type": "integer" } } }
+          }
+        }
+      },
+      "AdminProject": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string" },
+          "label": { "type": "string" },
+          "token": { "type": "string" },
+          "link": { "type": "string", "example": "/l/abc123" },
+          "factsCount": { "type": "integer" },
+          "publishedCount": { "type": "integer" },
+          "reachSum": { "type": "integer" },
+          "archived": { "type": "boolean" }
+        }
+      },
+      "StatusOptions": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "label": { "type": "string" } } } },
+      "ProjectSettings": {
+        "type": "object",
+        "properties": {
+          "projectId": { "type": "string" },
+          "clientNameRu": { "type": "string" },
+          "clientNameEn": { "type": "string" },
+          "ceoName": { "type": "string" },
+          "website": { "type": "string" },
+          "socialLinks": { "type": "array", "items": { "type": "object", "properties": { "title": { "type": "string" }, "url": { "type": "string" } } } },
+          "speakerProfile": { "type": "string" },
+          "otherInfo": { "type": "string" },
+          "archived": { "type": "boolean" },
+          "searchKeywords": { "type": "array", "items": { "type": "string" } },
+          "negativeKeywords": { "type": "array", "items": { "type": "string" } },
+          "positiveKeywords": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

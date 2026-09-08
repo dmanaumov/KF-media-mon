@@ -1,6 +1,8 @@
 const express = require('express');
 const compression = require('compression');
 const path = require('path');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./openapi.json');
 const config = require('./config');
 const mm = require('./mattermostClient');
 const db = require('./db');
@@ -439,6 +441,13 @@ app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (re
     res.status(502).json({ error: 'db_error', message: err.message });
   }
 });
+
+// --- OpenAPI / Swagger ---
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+  customSiteTitle: 'PR-мониторинг API',
+  swaggerOptions: { defaultModelsExpandDepth: 2 },
+}));
+app.get('/api/docs.json', (req, res) => res.json(swaggerDocument));
 
 // --- Static frontend (same layout as SMM) ---
 const frontendDir = path.join(__dirname, '..', 'frontend');
