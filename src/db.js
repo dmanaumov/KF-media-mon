@@ -110,6 +110,8 @@ async function initSchema() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   `);
+  await pool.query(`ALTER TABLE search_scenarios ADD COLUMN IF NOT EXISTS query text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE search_scenarios ADD COLUMN IF NOT EXISTS feed_url text NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_board_idx ON search_scenarios (board_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_project_idx ON search_scenarios (board_id, project_id);`);
 }

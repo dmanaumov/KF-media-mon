@@ -768,6 +768,8 @@ const scnName = document.getElementById('scnName');
 const scnProject = document.getElementById('scnProject');
 const scnKeywords = document.getElementById('scnKeywords');
 const scnSources = document.getElementById('scnSources');
+const scnQuery = document.getElementById('scnQuery');
+const scnFeedUrl = document.getElementById('scnFeedUrl');
 const scnNegative = document.getElementById('scnNegative');
 const scnPositive = document.getElementById('scnPositive');
 const scnDays = document.getElementById('scnDays');
@@ -790,6 +792,8 @@ function openScenarioModal(scenario) {
   scnProject.value = scenario ? scenario.projectId : (selectedProjectId || '');
   scnKeywords.value = scenario ? (scenario.keywords || []).join(', ') : '';
   scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
+  scnQuery.value = scenario ? (scenario.query || '') : '';
+  scnFeedUrl.value = scenario ? (scenario.feedUrl || '') : '';
   scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
   scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
   scenarioModalOverlay.hidden = false;
@@ -800,9 +804,16 @@ function closeScenarioModal() {
   editingScenarioId = null;
 }
 
+function scenariosForProject() {
+  const pid = selectedProjectId;
+  if (!pid) return currentScenarios;
+  return currentScenarios.filter((s) => String(s.projectId) === String(pid));
+}
+
 function renderScenariosPanel(container) {
-  if (!currentScenarios.length) {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
+  const list = scenariosForProject();
+  if (!list.length) {
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">${selectedProjectId ? `Сценариев для этого проекта пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.` : 'Выберите проект, чтобы увидеть его сценарии поиска.'}<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>`;
     const addBtn = container.querySelector('#addFirstScenarioBtn');
     if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
     return;
@@ -811,7 +822,7 @@ function renderScenariosPanel(container) {
     '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
     '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
-    currentScenarios.map((s) => `
+    list.map((s) => `
       <div class="scenario-row">
         <div class="scenario-row-main">
           <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
@@ -890,6 +901,8 @@ scnSave.addEventListener('click', async () => {
     sources: split(scnSources.value),
     negativeKeywords: split(scnNegative.value),
     positiveKeywords: split(scnPositive.value),
+    query: scnQuery.value.trim(),
+    feedUrl: scnFeedUrl.value.trim(),
   };
   scnSave.disabled = true;
   try {

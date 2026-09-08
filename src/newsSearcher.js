@@ -78,17 +78,36 @@ async function searchGoogleNews(query, { days = 7 } = {}) {
   return parseRssItems(xml).filter((item) => item.pubDate && item.pubDate >= cutoff);
 }
 
+// Fetch a custom RSS/API URL as-is (no query interpolation).
+async function searchFeed(feedUrl, { days = 7 } = {}) {
+  const res = await fetch(feedUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PR-Monitor/1.0)' },
+    timeout: 15000,
+  });
+  if (!res.ok) throw new Error(`Feed returned ${res.status}`);
+  const xml = await res.text();
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return parseRssItems(xml).filter((item) => item.pubDate && item.pubDate >= cutoff);
+}
+
 // Execute a single search scenario: build the query from its client/keywords
-// and sources, fetch Google News, classify sentiment and relevance, and
-// return ready-to-store results (does not persist).
+// and sources, fetch the feed (Google News by default, or a custom RSS/API URL
+// from scenario.feedUrl), classify sentiment and relevance, and return
+// ready-to-store results (does not persist).
 async function searchScenario(scenario, { days = 7 } = {}) {
   const keywords = toArray(scenario.keywords);
   const sources = toArray(scenario.sources);
   const parts = [...keywords, ...sources].filter(Boolean);
-  if (!parts.length) return { results: [], skipped: true, reason: 'no-keywords' };
+  const feedUrl = String(scenario.feedUrl || '').trim();
 
-  const query = parts.join(' OR ') || parts[0];
-  const raw = await searchGoogleNews(query, { days });
+  // A custom feed URL is used as-is (no query); otherwise a search query is required.
+  if (!feedUrl && !parts.length && !String(scenario.query || '').trim()) {
+    return { results: [], skipped: true, reason: 'no-keywords' };
+  }
+
+  const raw = feedUrl
+    ? await searchFeed(feedUrl, { days })
+    : await searchGoogleNews(String(scenario.query || '').trim() || (parts.join(' OR ') || parts[0]), { days });
 
   const negativeKw = toArray(scenario.negativeKeywords);
   const positiveKw = toArray(scenario.positiveKeywords);

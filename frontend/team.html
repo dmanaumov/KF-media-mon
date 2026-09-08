@@ -185,6 +185,12 @@
         <input class="field-input" id="scnKeywords" type="text" placeholder="бренд, имя директора, продукт…">
         <div class="field-label">Ссылки / источники (через запятую)</div>
         <input class="field-input" id="scnSources" type="text" placeholder="site:site.ru, конкретный URL…">
+        <div class="field-label">Поисковая строка (необязательно)</div>
+        <input class="field-input" id="scnQuery" type="text" placeholder="Пример: «ФЛГ» AND (суд OR иск)">
+        <div class="hint" style="margin:2px 0 0">Если заполнена — автоматизация ищет именно по этой строке как есть (со всеми её операторами). Иначе склеивает из ключевых слов.</div>
+        <div class="field-label">RSS/API URL источника (необязательно)</div>
+        <input class="field-input" id="scnFeedUrl" type="text" placeholder="https://site.ru/feed, https://news.google.com/rss/search?q=…">
+        <div class="hint" style="margin:2px 0 0">Если указан — автоматизация тянет ленту прямо с этого URL как есть (вместо Google News). Поисковая строка тогда не используется.</div>
         <div class="modal-row">
           <div>
             <div class="field-label">Слова-негатив</div>
