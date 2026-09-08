@@ -387,7 +387,7 @@ app.get('/api/cron/scenarios', async (req, res) => {
         sources: s.sources,
         negativeKeywords: s.negativeKeywords,
         positiveKeywords: s.positiveKeywords,
-        query: s.query,
+        regex: s.regex,
         feedUrl: s.feedUrl,
       })),
     });

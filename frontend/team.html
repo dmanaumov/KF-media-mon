@@ -184,10 +184,11 @@
         <div class="field-label">Ключевые слова (через запятую)</div>
         <input class="field-input" id="scnKeywords" type="text" placeholder="бренд, имя директора, продукт…">
         <div class="field-label">Ссылки / источники (через запятую)</div>
-        <input class="field-input" id="scnSources" type="text" placeholder="site:site.ru, конкретный URL…">
-        <div class="field-label">Поисковая строка (необязательно)</div>
-        <input class="field-input" id="scnQuery" type="text" placeholder="Пример: «ФЛГ» AND (суд OR иск)">
-        <div class="hint" style="margin:2px 0 0">Если заполнена — автоматизация ищет именно по этой строке как есть (со всеми её операторами). Иначе склеивает из ключевых слов.</div>
+        <input class="field-input" id="scnSources" type="text" placeholder="site:kommersant.ru, interfax.ru…">
+        <div class="hint" style="margin:2px 0 0">Где искать: домены или площадки. Пример: <span class="mono">site:kommersant.ru, interfax.ru, rbc.ru</span> — ограничит поиск этими доменами.</div>
+        <div class="field-label">Регулярное выражение (необязательно)</div>
+        <input class="field-input" id="scnRegex" type="text" placeholder="Пример: (?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)">
+        <div class="hint" style="margin:2px 0 0">Применяется к заголовку и описанию уже найденных результатов — оставляет только совпадения. Если пусто — берутся все найденные.</div>
         <div class="field-label">URL поиска / источника (необязательно)</div>
         <input class="field-input" id="scnFeedUrl" type="text" placeholder="https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&within=1, https://site.ru/feed…">
         <div class="hint" style="margin:2px 0 0">URL передаётся автоматизации как есть (ежесуточно). Годится Яндекс, Google, RSS/API-лента — например <span class="mono">https://yandex.ru/search/?text=…&within=1</span>. Поисковая строка тогда не используется.</div>

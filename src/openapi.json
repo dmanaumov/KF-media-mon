@@ -18,7 +18,7 @@
       "get": {
         "tags": ["Автоматизация"],
         "summary": "Актуальные сценарии поиска",
-        "description": "Возвращает только активные (не архивные) сценарии поиска — «фильтры», которые автоматизация должна выполнять. Сценарий: ключевые слова, источники/ссылки, позитивные и негативные ключи, готовая поисковая строка (query) и/или URL поиска (feedUrl). Приоритет: если задан feedUrl — автоматизация обращается к этому URL как есть (Яндекс, Google, RSS/API); иначе формирует запрос из query (либо из keywords/sources). Затем найденные материалы размещаются через POST /api/cron/mentions.",
+        "description": "Возвращает только активные (не архивные) сценарии поиска — «фильтры», которые автоматизация должна выполнять. Сценарий: ключевые слова, источники/ссылки, позитивные и негативные ключи, URL поиска (feedUrl) и/или регулярное выражение (regex) для фильтрации найденного. Приоритет: если задан feedUrl — автоматизация обращается к этому URL как есть (Яндекс, Google, RSS/API); иначе формирует запрос из keywords/sources. Найденные материалы фильтруются по regex (заголовок+описание), затем размещаются через POST /api/cron/mentions.",
         "security": [{ "automationApiKey": [] }],
         "responses": {
           "200": {
@@ -40,14 +40,14 @@
                           "sources": [],
                           "negativeKeywords": ["суд", "штраф"],
                           "positiveKeywords": ["рост", "лидер"],
-                          "query": "",
+                          "regex": "(?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)",
                           "feedUrl": "https://yandex.ru/search/?text=КЛЕВЕРСПОРТ&lr=213&within=1"
                         }
                       ]
                     }
                   },
                   "scenarioWithoutFeed": {
-                    "summary": "Сценарий без feedUrl (автоматизация сама формирует запрос из query/keywords)",
+                    "summary": "Сценарий без feedUrl (автоматизация сама формирует запрос из keywords/sources)",
                     "value": {
                       "boardId": "team",
                       "scenarios": [
@@ -59,7 +59,7 @@
                           "sources": [],
                           "negativeKeywords": [],
                           "positiveKeywords": [],
-                          "query": "",
+                          "regex": "",
                           "feedUrl": ""
                         }
                       ]
@@ -439,7 +439,7 @@
           },
           "negativeKeywords": { "type": "array", "items": { "type": "string" } },
           "positiveKeywords": { "type": "array", "items": { "type": "string" } },
-          "query": { "type": "string", "description": "Готовая поисковая строка как есть (например «ФЛГ» AND (суд OR иск)). Приоритетнее keywords/sources." },
+          "regex": { "type": "string", "description": "Регулярное выражение (регистронезависимое), применяется к заголовку и описанию уже найденных результатов — оставляет только совпадения. Если пусто — берутся все найденные.", "example": "(?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)" },
           "feedUrl": { "type": "string", "description": "URL поиска/источника, передаётся автоматизации как есть (ежесуточно). Яндекс, Google, RSS/API-лента. Если указан — автоматизация тянет этот URL напрямую вместо запроса из query/keywords.", "example": "https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&lr=213&within=1" },
           "archived": { "type": "boolean" },
           "createdBy": { "type": "string" },
@@ -461,7 +461,7 @@
           },
           "negativeKeywords": { "type": "array", "items": { "type": "string" } },
           "positiveKeywords": { "type": "array", "items": { "type": "string" } },
-          "query": { "type": "string", "description": "Готовая поисковая строка как есть (например «ФЛГ» AND (суд OR иск)). Приоритетнее keywords/sources.", "example": "«ФЛГ» AND (суд OR иск)" },
+          "regex": { "type": "string", "description": "Регулярное выражение (регистронезависимое), применяется к заголовку и описанию найденных результатов — оставляет только совпадения.", "example": "(?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)" },
           "feedUrl": { "type": "string", "description": "URL поиска/источника, передаётся автоматизации как есть (ежесуточно). Годится Яндекс, Google, RSS/API-лента. Если указан — автоматизация тянет этот URL напрямую вместо составления запроса из query/keywords.", "example": "https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&within=1" },
           "archived": { "type": "boolean" }
         }

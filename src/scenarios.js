@@ -19,7 +19,7 @@ function rowToScenario(row) {
     sources: toArray(row.sources),
     negativeKeywords: toArray(row.negative_keywords),
     positiveKeywords: toArray(row.positive_keywords),
-    query: row.query || '',
+    regex: row.regex || '',
     feedUrl: row.feed_url || '',
     archived: !!row.archived,
     createdBy: row.created_by || '',
@@ -50,7 +50,7 @@ async function getScenario(id, boardId) {
 async function createScenario(boardId, projectId, data, createdBy) {
   const pool = db.requirePool();
   const { rows } = await pool.query(
-    `INSERT INTO search_scenarios (board_id, project_id, name, keywords, sources, negative_keywords, positive_keywords, query, feed_url, created_by)
+    `INSERT INTO search_scenarios (board_id, project_id, name, keywords, sources, negative_keywords, positive_keywords, regex, feed_url, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [
       boardId,
@@ -60,7 +60,7 @@ async function createScenario(boardId, projectId, data, createdBy) {
       toArray(data.sources).slice(0, 50).map((s) => s.slice(0, 500)),
       toArray(data.negativeKeywords).slice(0, 50).map((s) => s.slice(0, 200)),
       toArray(data.positiveKeywords).slice(0, 50).map((s) => s.slice(0, 200)),
-      String(data.query || '').trim().slice(0, 1000),
+      String(data.regex || '').trim().slice(0, 1000),
       String(data.feedUrl || '').trim().slice(0, 1000),
       String(createdBy || '').slice(0, 200),
     ]
@@ -78,7 +78,7 @@ async function updateScenario(id, boardId, data) {
        sources = $5::text[],
        negative_keywords = $6::text[],
        positive_keywords = $7::text[],
-       query = $8,
+       regex = $8,
        feed_url = $11,
        archived = $9,
        updated_at = now()
@@ -92,7 +92,7 @@ async function updateScenario(id, boardId, data) {
       toArray(data.sources).slice(0, 50).map((s) => s.slice(0, 500)),
       toArray(data.negativeKeywords).slice(0, 50).map((s) => s.slice(0, 200)),
       toArray(data.positiveKeywords).slice(0, 50).map((s) => s.slice(0, 200)),
-      String(data.query || '').trim().slice(0, 1000),
+      String(data.regex || '').trim().slice(0, 1000),
       !!data.archived,
       String(data.projectId || '').slice(0, 100),
       String(data.feedUrl || '').trim().slice(0, 1000),

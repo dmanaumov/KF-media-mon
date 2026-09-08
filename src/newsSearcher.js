@@ -92,35 +92,47 @@ async function searchFeed(feedUrl, { days = 7 } = {}) {
 
 // Execute a single search scenario: build the query from its client/keywords
 // and sources, fetch the feed (Google News by default, or a custom RSS/API URL
-// from scenario.feedUrl), classify sentiment and relevance, and return
-// ready-to-store results (does not persist).
+// from scenario.feedUrl), then filter the results by an optional scenario.regex
+// (applied to title+description) and classify sentiment/relevance.
 async function searchScenario(scenario, { days = 7 } = {}) {
   const keywords = toArray(scenario.keywords);
   const sources = toArray(scenario.sources);
   const parts = [...keywords, ...sources].filter(Boolean);
   const feedUrl = String(scenario.feedUrl || '').trim();
+  const regexRaw = String(scenario.regex || '').trim();
 
-  // A custom feed URL is used as-is (no query); otherwise a search query is required.
-  if (!feedUrl && !parts.length && !String(scenario.query || '').trim()) {
+  if (!feedUrl && !parts.length) {
     return { results: [], skipped: true, reason: 'no-keywords' };
+  }
+
+  let regex = null;
+  if (regexRaw) {
+    try {
+      regex = new RegExp(regexRaw, 'i');
+    } catch (err) {
+      throw new Error(`invalid regex: ${regexRaw}`);
+    }
   }
 
   const raw = feedUrl
     ? await searchFeed(feedUrl, { days })
-    : await searchGoogleNews(String(scenario.query || '').trim() || (parts.join(' OR ') || parts[0]), { days });
+    : await searchGoogleNews(parts.join(' OR ') || parts[0], { days });
 
   const negativeKw = toArray(scenario.negativeKeywords);
   const positiveKw = toArray(scenario.positiveKeywords);
 
-  const results = raw.map((item) => ({
-    title: item.title,
-    url: item.link,
-    source: item.source,
-    publishedAt: item.pubDate ? item.pubDate.toISOString().slice(0, 10) : '',
-    snippet: item.description,
-    sentiment: classifySentiment(item.title + ' ' + item.description, negativeKw, positiveKw),
-    relevant: isRelevant(item.title, item.description, keywords, sources),
-  }));
+  const results = raw.map((item) => {
+    const text = (item.title + ' ' + item.description);
+    return {
+      title: item.title,
+      url: item.link,
+      source: item.source,
+      publishedAt: item.pubDate ? item.pubDate.toISOString().slice(0, 10) : '',
+      snippet: item.description,
+      sentiment: classifySentiment(text, negativeKw, positiveKw),
+      relevant: regex ? regex.test(text) : isRelevant(item.title, item.description, keywords, sources),
+    };
+  });
 
   return { results: results.filter((r) => r.relevant), skipped: false };
 }

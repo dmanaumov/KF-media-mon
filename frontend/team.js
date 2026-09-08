@@ -235,6 +235,7 @@ teamProjectSelect.addEventListener('change', async () => {
   if (activeTab === 'tasks') loadTasks();
   else if (activeTab === 'web') renderMentions();
   else if (activeTab === 'stats') loadStatsTab();
+  if (!scenariosPanel.hidden) renderScenariosPanel(scenariosPanel);
 });
 
 // ==================== Tabs ====================
@@ -768,7 +769,7 @@ const scnName = document.getElementById('scnName');
 const scnProject = document.getElementById('scnProject');
 const scnKeywords = document.getElementById('scnKeywords');
 const scnSources = document.getElementById('scnSources');
-const scnQuery = document.getElementById('scnQuery');
+const scnRegex = document.getElementById('scnRegex');
 const scnFeedUrl = document.getElementById('scnFeedUrl');
 const scnNegative = document.getElementById('scnNegative');
 const scnPositive = document.getElementById('scnPositive');
@@ -792,7 +793,7 @@ function openScenarioModal(scenario) {
   scnProject.value = scenario ? scenario.projectId : (selectedProjectId || '');
   scnKeywords.value = scenario ? (scenario.keywords || []).join(', ') : '';
   scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
-  scnQuery.value = scenario ? (scenario.query || '') : '';
+  scnRegex.value = scenario ? (scenario.regex || '') : '';
   scnFeedUrl.value = scenario ? (scenario.feedUrl || '') : '';
   scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
   scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
@@ -831,7 +832,7 @@ function renderScenariosPanel(container) {
           ${tagChips(s.negativeKeywords, 'neg')}
           ${tagChips(s.positiveKeywords, 'pos')}
           ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
-          ${s.query ? `<div class="scenario-meta" style="margin-top:4px">🔎 ${esc(s.query)}</div>` : ''}
+          ${s.regex ? `<div class="scenario-meta" style="margin-top:4px">🔎 ${esc(s.regex)}</div>` : ''}
           ${s.feedUrl ? `<div class="scenario-meta" style="margin-top:4px">📡 ${esc(s.feedUrl)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
@@ -894,7 +895,7 @@ scenariosPanel.addEventListener('click', async (e) => {
         sources: s.sources || [],
         negativeKeywords: s.negativeKeywords || [],
         positiveKeywords: s.positiveKeywords || [],
-        query: s.query || '',
+        regex: s.regex || '',
         feedUrl: s.feedUrl || '',
       };
       await teamApi('/search-scenarios', { method: 'POST', body });
@@ -920,7 +921,7 @@ scenariosPanel.addEventListener('click', async (e) => {
           sources: s.sources || [],
           negativeKeywords: s.negativeKeywords || [],
           positiveKeywords: s.positiveKeywords || [],
-          query: s.query || '',
+          regex: s.regex || '',
           feedUrl: s.feedUrl || '',
           archived: nextArchived,
         },
@@ -959,7 +960,7 @@ scnSave.addEventListener('click', async () => {
     sources: split(scnSources.value),
     negativeKeywords: split(scnNegative.value),
     positiveKeywords: split(scnPositive.value),
-    query: scnQuery.value.trim(),
+    regex: scnRegex.value.trim(),
     feedUrl: scnFeedUrl.value.trim(),
   };
   scnSave.disabled = true;
