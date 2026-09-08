@@ -161,7 +161,7 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .social-row .field-input{margin:0}
 .remove-social{color:#A12E2E;font-size:14px;padding:6px 8px}
 
-/* --- Search scenarios (the "filters" n8n runs) --- */
+/* --- Search scenarios (the "filters" automation runs) --- */
 .btn.small{padding:9px 12px;font-size:12.5px;width:auto;margin-top:0}
 .scenarios-panel{background:#fff;border:1px solid var(--line);border-radius:22px;padding:16px;margin-bottom:14px}
 .scenarios-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
