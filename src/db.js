@@ -92,8 +92,8 @@ async function initSchema() {
 
   // Search scenarios — the "filters" a user configures from the team cabinet
   // (project + keywords + sources/links). These are executed externally by
-  // n8n via POST /api/cron/search-news; the app only stores and displays
-  // the results that that run persists into `mentions` (source_type='auto').
+  // n8n via GET /api/cron/scenarios; the app only stores and displays
+  // the results that the automation persists into `mentions` (source_type='auto').
   await pool.query(`
     CREATE TABLE IF NOT EXISTS search_scenarios (
       id bigserial PRIMARY KEY,

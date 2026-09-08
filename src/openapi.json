@@ -97,29 +97,6 @@
         }
       }
     },
-    "/api/cron/search-news": {
-      "post": {
-        "tags": ["Автоматизация"],
-        "summary": "Выполнить сценарии поиска (сборка новостей на сервере)",
-        "description": "Запускает все активные сценарии поиска за последние N дней и сохраняет совпадения в БД (source_type='auto_search'). Используется, когда поиск выполняет само приложение; обычно автоматизация сама ищет в Google News RSS и отдаёт результат через POST /api/cron/mentions.",
-        "security": [{ "automationApiKey": [] }],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/SearchNewsRequest" } }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Сводка по сценариям",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchNewsResponse" } } }
-          },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "502": { "$ref": "#/components/responses/SearchFailed" }
-        }
-      }
-    },
     "/api/team/login": {
       "post": {
         "tags": ["Кабинет команды"],
@@ -542,25 +519,6 @@
           "dropped": {
             "type": "array",
             "items": { "type": "object", "properties": { "index": { "type": "integer" }, "reason": { "type": "string" }, "message": { "type": "string" } } }
-          }
-        }
-      },
-      "SearchNewsRequest": {
-        "type": "object",
-        "properties": {
-          "days": { "type": "integer", "minimum": 1, "maximum": 30, "default": 7, "example": 7 }
-        }
-      },
-      "SearchNewsResponse": {
-        "type": "object",
-        "properties": {
-          "ok": { "type": "boolean" },
-          "days": { "type": "integer" },
-          "scenarios": { "type": "integer" },
-          "inserted": { "type": "integer" },
-          "summary": {
-            "type": "array",
-            "items": { "type": "object", "properties": { "scenarioId": { "type": "integer" }, "projectId": { "type": "string" }, "found": { "type": "integer" }, "inserted": { "type": "integer" }, "skipped": { "type": "boolean" }, "error": { "type": "string" } } }
           }
         }
       },

@@ -10,7 +10,6 @@ const teamAuth = require('./teamAuth');
 const projectSettings = require('./projectSettings');
 const mentions = require('./mentions');
 const { buildTasks, projectOptions, statusOptions } = require('./taskMapper');
-const newsSearcher = require('./newsSearcher');
 const scenarios = require('./scenarios');
 
 const app = express();
@@ -340,31 +339,6 @@ app.post('/api/cron/mentions', async (req, res) => {
   }
 });
 
-// --- Cron: nightly news search (called by n8n, not by the browser) ---
-// POST /api/cron/search-news  with header  X-Automation-Api-Key: <AUTOMATION_API_KEY>
-// Runs every active search scenario (project + keywords + sources) for the
-// last N days and stores matches in `mentions` (source_type='auto_search').
-// The app itself only reads and displays; all searching is delegated to n8n.
-app.post('/api/cron/search-news', async (req, res) => {
-  const secret = config.automationApiKey;
-  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
-    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
-  }
-  const days = parseInt(req.body && req.body.days, 10) || 7;
-  if (days < 1 || days > 30) {
-    return res.status(400).json({ error: 'bad_days', message: 'days must be between 1 and 30.' });
-  }
-  try {
-    const active = await scenarios.listActiveScenarios(config.mattermostBoardId);
-    const summary = await newsSearcher.runScenarios(config.mattermostBoardId, active, { days, createdBy: 'n8n-cron' });
-    const totalInserted = summary.reduce((a, s) => a + (s.inserted || 0), 0);
-    res.json({ ok: true, days, scenarios: active.length, inserted: totalInserted, summary });
-  } catch (err) {
-    console.error('[api] /api/cron/search-news failed:', err.message);
-    res.status(502).json({ error: 'search_failed', message: err.message });
-  }
-});
-
 // --- Cron: active search scenarios for the external automation (n8n) ---
 // GET /api/cron/scenarios  with header  X-Automation-Api-Key: <AUTOMATION_API_KEY>
 // Returns only non-archived scenarios — the "current filters" the automation
@@ -447,7 +421,12 @@ app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (re
 // --- OpenAPI / Swagger ---
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
   customSiteTitle: 'PR-мониторинг API',
-  swaggerOptions: { defaultModelsExpandDepth: 2 },
+  swaggerOptions: {
+    defaultModelsExpandDepth: -1, // show models collapsed, but expandable
+    defaultModelExpandDepth: 10,  // keep model fields expanded inside the docs
+    persistAuthorization: true,
+    displayRequestDuration: true,
+  },
 }));
 app.get('/api/docs.json', (req, res) => res.json(swaggerDocument));
 
