@@ -151,6 +151,14 @@ async function listTeamBoards(teamId) {
 
 async function getBoard(boardId, teamId) {
   if (!teamId) throw new Error('MATTERMOST_TEAM_ID is not configured');
+  try {
+    const res = await mmFetch(boardsUrl(`/boards/${boardId}`), {}, `getBoard(${boardId})`);
+    const board = await asJsonOrThrow(res, `getBoard(${boardId})`);
+    if (board && !board.title) throw new Error(`Board ${boardId} returned malformed body`);
+    return board;
+  } catch (err) {
+    if (!String(err.message).includes('HTTP 404')) throw err;
+  }
   const boards = await listTeamBoards(teamId);
   const board = boards.find((b) => b.id === boardId);
   if (!board) throw new Error(`Board ${boardId} not found in team ${teamId} (checked ${boards.length} boards)`);
