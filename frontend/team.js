@@ -790,15 +790,15 @@ async function loadScenarios() {
 
 scenariosBtn.addEventListener('click', async () => {
   await loadScenarios();
-  const panel = document.createElement('div');
+  const existing = document.getElementById('scenariosPanel');
+  const panel = existing || document.createElement('div');
   panel.className = 'scenarios-panel';
   panel.id = 'scenariosPanel';
   renderScenariosPanel(panel);
-  const existing = document.getElementById('scenariosPanel');
-  if (existing) existing.remove();
-  // Вставить сразу после <header> — панель видна над табами
-  const header = document.querySelector('header.head');
-  header.after(panel);
+  if (!existing) {
+    // Вставить внутри вкладки WEB, сразу после тулбара / перед списком упоминаний
+    webList.before(panel);
+  }
   panel.addEventListener('click', async (e) => {
     const edit = e.target.closest('[data-edit-scenario]');
     const del = e.target.closest('[data-del-scenario]');

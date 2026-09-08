@@ -48,10 +48,6 @@
           <button type="button" class="tab" data-tab="web">WEB<span class="tab-badge" id="webAlertBadge" hidden>0</span></button>
           <button type="button" class="tab" data-tab="stats">Статистика</button>
         </nav>
-
-        <div class="web-toolbar" style="margin-top:12px;margin-bottom:0">
-          <button type="button" class="btn approve small" id="scenariosBtn">⚙ Сценарии поиска</button>
-        </div>
       </header>
 
       <!-- Текущие задачи -->
@@ -96,7 +92,10 @@
       <section class="tab-panel" id="panelWeb" hidden>
         <div class="web-toolbar">
           <div class="hint" id="webScopeHint"></div>
-          <button type="button" class="btn approve small" id="addMentionBtn">+ Добавить упоминание</button>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn approve small" id="addMentionBtn">+ Добавить упоминание</button>
+            <button type="button" class="btn small" id="scenariosBtn">⚙ Сценарии поиска</button>
+          </div>
         </div>
         <div class="loading" id="webLoading" hidden>Загружаем упоминания…</div>
         <div class="stack" id="webList"></div>
