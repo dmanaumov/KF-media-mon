@@ -32,7 +32,7 @@ async function listScenarios(boardId, { includeArchived = false } = {}) {
   const { rows } = await pool.query(
     `SELECT * FROM search_scenarios
      WHERE board_id = $1${includeArchived ? '' : ' AND archived = false'}
-     ORDER BY updated_at DESC`,
+     ORDER BY project_id, updated_at DESC`,
     [boardId]
   );
   return rows.map(rowToScenario);

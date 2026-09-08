@@ -400,7 +400,7 @@ app.get('/api/cron/scenarios', async (req, res) => {
 // --- Team cabinet: search scenarios (the "filters" n8n runs) ---
 app.get('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
   try {
-    const list = await scenarios.listScenarios(config.mattermostBoardId);
+    const list = await scenarios.listScenarios(config.mattermostBoardId, { includeArchived: true });
     res.json({ scenarios: list });
   } catch (err) {
     console.error('[api] /api/team/search-scenarios GET failed:', err.message);

@@ -823,17 +823,23 @@ function renderScenariosPanel(container) {
     '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
     list.map((s) => `
-      <div class="scenario-row">
+      <div class="scenario-row${s.archived ? ' is-archived' : ''}">
         <div class="scenario-row-main">
-          <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
+          <div class="scenario-name">${esc(s.name || 'Без названия')}${s.archived ? ' <span class="scenario-archived-tag">деактивирован</span>' : ''}</div>
           <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.days ? ' · последние ' + s.days + ' дн.' : ''}</div>
           ${tagChips(s.keywords)}
           ${tagChips(s.negativeKeywords, 'neg')}
           ${tagChips(s.positiveKeywords, 'pos')}
           ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
+          ${s.query ? `<div class="scenario-meta" style="margin-top:4px">🔎 ${esc(s.query)}</div>` : ''}
+          ${s.feedUrl ? `<div class="scenario-meta" style="margin-top:4px">📡 ${esc(s.feedUrl)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
+          <button type="button" class="icon-btn" data-dup-scenario="${s.id}">Дублировать</button>
           <button type="button" class="icon-btn" data-edit-scenario="${s.id}">Изменить</button>
+          ${s.archived
+            ? `<button type="button" class="icon-btn" data-toggle-scenario="${s.id}">Активировать</button>`
+            : `<button type="button" class="icon-btn warn" data-toggle-scenario="${s.id}">Деактивировать</button>`}
           <button type="button" class="icon-btn warn" data-del-scenario="${s.id}">Удалить</button>
         </div>
       </div>`).join('');
@@ -869,10 +875,62 @@ scenariosPanel.addEventListener('click', async (e) => {
   const close = e.target.closest('[data-close-scenarios]');
   const edit = e.target.closest('[data-edit-scenario]');
   const del = e.target.closest('[data-del-scenario]');
+  const dup = e.target.closest('[data-dup-scenario]');
+  const toggle = e.target.closest('[data-toggle-scenario]');
   if (close) { hideScenariosPanel(); return; }
   if (edit) {
     const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
     openScenarioModal(s);
+    return;
+  }
+  if (dup) {
+    try {
+      const s = currentScenarios.find((x) => String(x.id) === dup.dataset.dupScenario);
+      if (!s) return;
+      const body = {
+        projectId: s.projectId,
+        name: (s.name || 'Без названия') + ' (копия)',
+        keywords: s.keywords || [],
+        sources: s.sources || [],
+        negativeKeywords: s.negativeKeywords || [],
+        positiveKeywords: s.positiveKeywords || [],
+        query: s.query || '',
+        feedUrl: s.feedUrl || '',
+      };
+      await teamApi('/search-scenarios', { method: 'POST', body });
+      showToast('Сценарий продублирован.');
+      await loadScenarios();
+      renderScenariosPanel(scenariosPanel);
+    } catch (err) {
+      showToast(err.message);
+    }
+    return;
+  }
+  if (toggle) {
+    const s = currentScenarios.find((x) => String(x.id) === toggle.dataset.toggleScenario);
+    if (!s) return;
+    const nextArchived = !s.archived;
+    try {
+      await teamApi(`/search-scenarios/${toggle.dataset.toggleScenario}`, {
+        method: 'PUT',
+        body: {
+          projectId: s.projectId,
+          name: s.name || '',
+          keywords: s.keywords || [],
+          sources: s.sources || [],
+          negativeKeywords: s.negativeKeywords || [],
+          positiveKeywords: s.positiveKeywords || [],
+          query: s.query || '',
+          feedUrl: s.feedUrl || '',
+          archived: nextArchived,
+        },
+      });
+      showToast(nextArchived ? 'Сценарий деактивирован — автоматизация его больше не выполняет.' : 'Сценарий активирован.');
+      await loadScenarios();
+      renderScenariosPanel(scenariosPanel);
+    } catch (err) {
+      showToast(err.message);
+    }
     return;
   }
   if (del && confirm('Удалить сценарий? Останется ли у проекта его настройка — проверьте.')) {

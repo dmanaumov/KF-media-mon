@@ -188,9 +188,9 @@
         <div class="field-label">Поисковая строка (необязательно)</div>
         <input class="field-input" id="scnQuery" type="text" placeholder="Пример: «ФЛГ» AND (суд OR иск)">
         <div class="hint" style="margin:2px 0 0">Если заполнена — автоматизация ищет именно по этой строке как есть (со всеми её операторами). Иначе склеивает из ключевых слов.</div>
-        <div class="field-label">RSS/API URL источника (необязательно)</div>
-        <input class="field-input" id="scnFeedUrl" type="text" placeholder="https://site.ru/feed, https://news.google.com/rss/search?q=…">
-        <div class="hint" style="margin:2px 0 0">Если указан — автоматизация тянет ленту прямо с этого URL как есть (вместо Google News). Поисковая строка тогда не используется.</div>
+        <div class="field-label">URL поиска / источника (необязательно)</div>
+        <input class="field-input" id="scnFeedUrl" type="text" placeholder="https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&within=1, https://site.ru/feed…">
+        <div class="hint" style="margin:2px 0 0">URL передаётся автоматизации как есть (ежесуточно). Годится Яндекс, Google, RSS/API-лента — например <span class="mono">https://yandex.ru/search/?text=…&within=1</span>. Поисковая строка тогда не используется.</div>
         <div class="modal-row">
           <div>
             <div class="field-label">Слова-негатив</div>
