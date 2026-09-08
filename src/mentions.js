@@ -7,9 +7,14 @@
 const db = require('./db');
 
 const SENTIMENTS = ['positive', 'neutral', 'negative'];
+const EVENT_TYPES = ['article', 'news'];
 
 function normSentiment(s) {
   return SENTIMENTS.includes(s) ? s : 'neutral';
+}
+
+function normEventType(s) {
+  return EVENT_TYPES.includes(s) ? s : 'news';
 }
 
 function rowToMention(r) {
@@ -20,6 +25,7 @@ function rowToMention(r) {
     publishedAt: r.published_at ? new Date(r.published_at).toISOString().slice(0, 10) : '',
     sentiment: r.sentiment || 'neutral',
     urgent: !!r.urgent,
+    eventType: normEventType(r.event_type),
     comment: r.comment || '',
     createdBy: r.created_by || '',
     createdAt: r.created_at,
@@ -39,8 +45,8 @@ async function listMentions(boardId, projectId) {
 async function createMention(boardId, projectId, data, createdBy) {
   const pool = db.requirePool();
   const { rows } = await pool.query(
-    `INSERT INTO mentions (board_id, project_id, url, source, published_at, sentiment, urgent, comment, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    `INSERT INTO mentions (board_id, project_id, url, source, published_at, sentiment, urgent, comment, event_type, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [
       boardId,
       projectId,
@@ -50,6 +56,7 @@ async function createMention(boardId, projectId, data, createdBy) {
       normSentiment(data.sentiment),
       !!data.urgent,
       String(data.comment || '').trim().slice(0, 4000),
+      normEventType(data.eventType),
       String(createdBy || '').slice(0, 200),
     ]
   );
@@ -60,7 +67,7 @@ async function updateMention(id, boardId, projectId, data) {
   const pool = db.requirePool();
   const { rows } = await pool.query(
     `UPDATE mentions SET
-       url = $4, source = $5, published_at = $6, sentiment = $7, urgent = $8, comment = $9, updated_at = now()
+       url = $4, source = $5, published_at = $6, sentiment = $7, urgent = $8, comment = $9, event_type = $10, updated_at = now()
      WHERE id = $1 AND board_id = $2 AND project_id = $3
      RETURNING *`,
     [
@@ -73,6 +80,7 @@ async function updateMention(id, boardId, projectId, data) {
       normSentiment(data.sentiment),
       !!data.urgent,
       String(data.comment || '').trim().slice(0, 4000),
+      normEventType(data.eventType),
     ]
   );
   return rows[0] ? rowToMention(rows[0]) : null;
@@ -125,10 +133,11 @@ async function importMentions(boardId, provider, items) {
         String(raw.comment || raw.snippet || '').trim().slice(0, 4000),
         createdBy,
         String(raw.sourceType || 'auto').slice(0, 50),
+        normEventType(raw.eventType || raw.event_type),
       ];
       const res = await pool.query(
-        `INSERT INTO mentions (board_id, project_id, url, source, title, published_at, sentiment, urgent, comment, created_by, source_type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        `INSERT INTO mentions (board_id, project_id, url, source, title, published_at, sentiment, urgent, comment, created_by, source_type, event_type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          ON CONFLICT (board_id, project_id, url) DO NOTHING
          RETURNING id`,
         params
@@ -172,4 +181,4 @@ async function monthlyStats(boardId, projectId) {
   });
 }
 
-module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, SENTIMENTS };
+module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, SENTIMENTS, EVENT_TYPES };

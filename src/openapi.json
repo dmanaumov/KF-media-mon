@@ -461,6 +461,7 @@
           "publishedAt": { "type": "string", "format": "date" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
           "urgent": { "type": "boolean" },
+          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
           "comment": { "type": "string", "description": "Краткая информация/сниппет" },
           "createdBy": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" }
@@ -476,6 +477,7 @@
           "publishedAt": { "type": "string", "format": "date" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
           "urgent": { "type": "boolean" },
+          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
           "comment": { "type": "string" }
         }
       },
@@ -492,6 +494,7 @@
           "comment": { "type": "string", "description": "Краткая информация/сниппет" },
           "publishedAt": { "type": "string", "format": "date", "example": "2026-09-08" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
           "urgent": { "type": "boolean" },
           "sourceType": { "type": "string", "default": "auto" }
         }
@@ -508,6 +511,14 @@
           },
           "providerName": { "type": "string", "default": "n8n", "description": "Кто разместил (visible createdBy)" },
           "projectId": { "type": "string", "description": "Общий проект для всех items" }
+        },
+        "example": {
+          "providerName": "n8n",
+          "projectId": "project-42",
+          "items": [
+            { "url": "https://iz.ru/news/123", "source": "Известия", "title": "Клеверспорт открыл новый офис", "publishedAt": "2026-09-08", "sentiment": "positive", "eventType": "article", "comment": "открытие офиса в Москве" },
+            { "url": "https://ria.ru/456", "source": "РИА Новости", "title": "Суд обязал Клеверспорт заплатить", "publishedAt": "2026-09-07", "sentiment": "negative", "eventType": "news" }
+          ]
         }
       },
       "ImportMentionsResponse": {

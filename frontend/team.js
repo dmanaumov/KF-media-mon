@@ -100,6 +100,7 @@ const mentionUrl = document.getElementById('mentionUrl');
 const mentionSource = document.getElementById('mentionSource');
 const mentionDate = document.getElementById('mentionDate');
 const mentionSentiment = document.getElementById('mentionSentiment');
+const mentionEventType = document.getElementById('mentionEventType');
 const mentionUrgent = document.getElementById('mentionUrgent');
 const mentionComment = document.getElementById('mentionComment');
 const mentionCancelBtn = document.getElementById('mentionCancelBtn');
@@ -503,6 +504,7 @@ function updateWebBadge() {
 
 const SENTIMENT_LABEL = { positive: 'Позитив', neutral: 'Нейтрально', negative: 'Негатив' };
 const SENTIMENT_CLASS = { positive: 'published', neutral: 'gray', negative: 'rejected' };
+const EVENT_TYPE_LABEL = { article: 'Статья / публикация', news: 'Новость' };
 
 function mentionCardHtml(m) {
   const isAlert = m.sentiment === 'negative' || m.urgent;
@@ -524,6 +526,7 @@ function mentionCardHtml(m) {
         </div>
         <div class="badges">
           <span class="status ${SENTIMENT_CLASS[m.sentiment] || 'gray'}">${SENTIMENT_LABEL[m.sentiment] || 'Нейтрально'}</span>
+          <span class="status gray">${EVENT_TYPE_LABEL[m.eventType] || 'Новость'}</span>
           ${m.urgent ? '<span class="status urgent-badge">🚨 Срочно</span>' : ''}
         </div>
       </div>
@@ -566,6 +569,7 @@ function openMentionModal(mention) {
   mentionSource.value = mention ? mention.source : '';
   mentionDate.value = mention ? mention.publishedAt : '';
   mentionSentiment.value = mention ? mention.sentiment : 'neutral';
+  mentionEventType.value = mention ? (mention.eventType || 'news') : 'news';
   mentionUrgent.checked = mention ? mention.urgent : false;
   mentionComment.value = mention ? mention.comment : '';
   mentionDeleteBtn.hidden = !mention;
@@ -595,6 +599,7 @@ mentionSaveBtn.addEventListener('click', async () => {
     source: mentionSource.value.trim(),
     publishedAt: mentionDate.value || null,
     sentiment: mentionSentiment.value,
+    eventType: mentionEventType.value,
     urgent: mentionUrgent.checked,
     comment: mentionComment.value.trim(),
   };

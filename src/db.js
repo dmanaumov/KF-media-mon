@@ -88,6 +88,7 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS mentions_published_idx ON mentions (published_at);`);
   await pool.query(`ALTER TABLE mentions ADD COLUMN IF NOT EXISTS source_type text NOT NULL DEFAULT 'manual';`);
   await pool.query(`ALTER TABLE mentions ADD COLUMN IF NOT EXISTS title text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE mentions ADD COLUMN IF NOT EXISTS event_type text NOT NULL DEFAULT 'news';`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mentions_url_unique ON mentions (board_id, project_id, url) WHERE url != '';`);
 
   // Search scenarios — the "filters" a user configures from the team cabinet
