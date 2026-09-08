@@ -256,6 +256,7 @@ function setActiveTab(tab) {
   if (tab === 'tasks') loadTasks();
   else if (tab === 'web') loadWebTab();
   else if (tab === 'stats') loadStatsTab();
+  if (tab !== 'web') hideScenariosPanel();
 }
 
 // ==================== Текущие задачи ====================
@@ -751,14 +752,15 @@ function closeScenarioModal() {
 
 function renderScenariosPanel(container) {
   if (!currentScenarios.length) {
-    container.innerHTML = '<div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
     const addBtn = container.querySelector('#addFirstScenarioBtn');
     if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
     return;
   }
   container.innerHTML =
     '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
-    '<button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button></div>' +
+    '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
+    '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
     currentScenarios.map((s) => `
       <div class="scenario-row">
         <div class="scenario-row-main">
@@ -788,36 +790,53 @@ async function loadScenarios() {
   }
 }
 
-scenariosBtn.addEventListener('click', async () => {
-  await loadScenarios();
-  const existing = document.getElementById('scenariosPanel');
-  const panel = existing || document.createElement('div');
-  panel.className = 'scenarios-panel';
-  panel.id = 'scenariosPanel';
-  renderScenariosPanel(panel);
-  if (!existing) {
-    // Вставить внутри вкладки WEB, сразу после тулбара / перед списком упоминаний
+function hideScenariosPanel() {
+  const panel = document.getElementById('scenariosPanel');
+  if (panel) panel.hidden = true;
+}
+
+function getScenariosPanel() {
+  let panel = document.getElementById('scenariosPanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.className = 'scenarios-panel';
+    panel.id = 'scenariosPanel';
     webList.before(panel);
-  }
-  panel.addEventListener('click', async (e) => {
-    const edit = e.target.closest('[data-edit-scenario]');
-    const del = e.target.closest('[data-del-scenario]');
-    if (edit) {
-      const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
-      openScenarioModal(s);
-      return;
-    }
-    if (del && confirm('Удалить сценарий?')) {
-      try {
-        await teamApi(`/search-scenarios/${del.dataset.delScenario}`, { method: 'DELETE' });
-        showToast('Сценарий удалён.');
-        await loadScenarios();
-        renderScenariosPanel(panel);
-      } catch (err) {
-        showToast(err.message);
+    panel.addEventListener('click', async (e) => {
+      const edit = e.target.closest('[data-edit-scenario]');
+      const del = e.target.closest('[data-del-scenario]');
+      const close = e.target.closest('[data-close-scenarios]');
+      if (close) { hideScenariosPanel(); return; }
+      if (edit) {
+        const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
+        openScenarioModal(s);
+        return;
       }
-    }
-  });
+      if (del && confirm('Удалить сценарий?')) {
+        try {
+          await teamApi(`/search-scenarios/${del.dataset.delScenario}`, { method: 'DELETE' });
+          showToast('Сценарий удалён.');
+          await loadScenarios();
+          renderScenariosPanel(panel);
+        } catch (err) {
+          showToast(err.message);
+        }
+      }
+    });
+  }
+  return panel;
+}
+
+scenariosBtn.addEventListener('click', async () => {
+  const existing = document.getElementById('scenariosPanel');
+  if (existing && !existing.hidden) {
+    hideScenariosPanel();
+    return;
+  }
+  await loadScenarios();
+  const panel = getScenariosPanel();
+  panel.hidden = false;
+  renderScenariosPanel(panel);
 });
 
 scnCancel.addEventListener('click', closeScenarioModal);
