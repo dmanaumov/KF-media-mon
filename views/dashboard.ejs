@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>PR-мониторинг — факты публикаций</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <nav class="topnav">
+    <div class="brand">📣 PR-мониторинг</div>
+    <div class="links">
+      <a href="/" class="active">Факты</a>
+      <a href="/clients">По клиентам</a>
+      <a href="/logout">Выйти</a>
+    </div>
+  </nav>
+
+  <main>
+    <h1>Факты публикаций</h1>
+    <p class="hint">
+      Источник — борд «PR департамент» в Mattermost (карточки со статусом заполненной «Ссылки на публикацию»).
+      Колонка «Перепечатки» пока пустая — поисковый пайплайн ещё не подключён (фаза 2).
+    </p>
+
+    <form class="filters" method="get" action="/">
+      <label>Клиент
+        <select name="client" onchange="this.form.submit()">
+          <option value="">Все</option>
+          <% clients.forEach(c => { %>
+            <option value="<%= c.name %>" <%= clientFilter === c.name ? 'selected' : '' %>><%= c.name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>Статус
+        <select name="status" onchange="this.form.submit()">
+          <option value="">Все</option>
+          <% statuses.forEach(s => { %>
+            <option value="<%= s %>" <%= statusFilter === s ? 'selected' : '' %>><%= s %></option>
+          <% }) %>
+        </select>
+      </label>
+      <span class="count"><%= facts.length %> запис<%= facts.length % 10 === 1 && facts.length % 100 !== 11 ? 'ь' : (facts.length % 10 >= 2 && facts.length % 10 <= 4 && !(facts.length % 100 >= 12 && facts.length % 100 <= 14) ? 'и' : 'ей') %></span>
+    </form>
+
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Клиент</th>
+          <th>Материал</th>
+          <th>Площадка</th>
+          <th>Дата</th>
+          <th>Статус</th>
+          <th>Охват (UVM)</th>
+          <th>Перепечатки</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% facts.forEach(f => { %>
+          <tr>
+            <td><%= f.client_name || '—' %></td>
+            <td class="title-cell"><%= f.title %></td>
+            <td><%= f.platform_name || '—' %></td>
+            <td><%= f.publish_date ? new Date(f.publish_date).toLocaleDateString('ru-RU') : '—' %></td>
+            <td><span class="status-pill"><%= f.status || '—' %></span></td>
+            <td class="num"><%= f.reach_estimate ? Number(f.reach_estimate).toLocaleString('ru-RU') : '—' %></td>
+            <td class="muted">поиск не запущен</td>
+            <td><a href="<%= f.url %>" target="_blank" rel="noopener">открыть ↗</a></td>
+          </tr>
+        <% }) %>
+        <% if (facts.length === 0) { %>
+          <tr><td colspan="8" class="empty">Ничего не найдено по фильтру</td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
