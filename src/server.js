@@ -305,7 +305,7 @@ app.put('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, as
 });
 
 // --- Ingest: search results from an external system (n8n) ---
-// POST /api/cron/mentions  with header  X-Cron-Secret: <CRON_SECRET>
+// POST /api/cron/mentions  with header  X-Automation-Api-Key: <AUTOMATION_API_KEY>
 // The external system does the searching; the app only persists the findings
 // into `mentions` in the exact shape the WEB tab renders. Idempotent: rows
 // with the same (project, url) are skipped on re-run.
@@ -313,9 +313,9 @@ app.put('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, as
 //                    sentiment?, urgent?, comment?, sourceType? } ] }
 // `projectId` may also be given at top level and inherited by all items.
 app.post('/api/cron/mentions', async (req, res) => {
-  const secret = config.cronSecret;
-  if (!secret || req.get('X-Cron-Secret') !== secret) {
-    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Cron-Secret.' });
+  const secret = config.automationApiKey;
+  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
   }
   const body = req.body || {};
   const items = Array.isArray(body.items) ? body.items : [];
@@ -339,14 +339,14 @@ app.post('/api/cron/mentions', async (req, res) => {
 });
 
 // --- Cron: nightly news search (called by n8n, not by the browser) ---
-// POST /api/cron/search-news  with header  X-Cron-Secret: <CRON_SECRET>
+// POST /api/cron/search-news  with header  X-Automation-Api-Key: <AUTOMATION_API_KEY>
 // Runs every active search scenario (project + keywords + sources) for the
 // last N days and stores matches in `mentions` (source_type='auto_search').
 // The app itself only reads and displays; all searching is delegated to n8n.
 app.post('/api/cron/search-news', async (req, res) => {
-  const secret = config.cronSecret;
-  if (!secret || req.get('X-Cron-Secret') !== secret) {
-    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Cron-Secret.' });
+  const secret = config.automationApiKey;
+  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
   }
   const days = parseInt(req.body && req.body.days, 10) || 7;
   if (days < 1 || days > 30) {
@@ -360,6 +360,36 @@ app.post('/api/cron/search-news', async (req, res) => {
   } catch (err) {
     console.error('[api] /api/cron/search-news failed:', err.message);
     res.status(502).json({ error: 'search_failed', message: err.message });
+  }
+});
+
+// --- Cron: active search scenarios for the external automation (n8n) ---
+// GET /api/cron/scenarios  with header  X-Automation-Api-Key: <AUTOMATION_API_KEY>
+// Returns only non-archived scenarios — the "current filters" the automation
+// should run. The automation then does the searching and pushes findings to
+// POST /api/cron/mentions.
+app.get('/api/cron/scenarios', async (req, res) => {
+  const secret = config.automationApiKey;
+  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
+  }
+  try {
+    const list = await scenarios.listActiveScenarios(config.mattermostBoardId);
+    res.json({
+      boardId: config.mattermostBoardId,
+      scenarios: list.map((s) => ({
+        id: s.id,
+        projectId: s.projectId,
+        name: s.name,
+        keywords: s.keywords,
+        sources: s.sources,
+        negativeKeywords: s.negativeKeywords,
+        positiveKeywords: s.positiveKeywords,
+      })),
+    });
+  } catch (err) {
+    console.error('[api] /api/cron/scenarios failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
   }
 });
 

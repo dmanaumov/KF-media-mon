@@ -211,6 +211,12 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .scenario-form .modal-row{grid-template-columns:1fr 1fr}
 .scenario-empty{font-size:12.5px;color:var(--muted);line-height:1.5}
 
+/* --- Stats period selector --- */
+.period-select{display:inline-flex;gap:3px;max-width:100%;overflow-x:auto;scrollbar-width:none;background:#F1F4F3;border-radius:var(--radius-pill);padding:4px;margin-bottom:14px}
+.period-select::-webkit-scrollbar{display:none}
+.period-btn{border:0;flex:0 0 auto;background:transparent;border-radius:var(--radius-pill);padding:8px 15px;font-size:12px;font-weight:800;color:var(--muted);white-space:nowrap;transition:background .15s ease,color .15s ease}
+.period-btn.active{background:var(--accent);color:#fff}
+
 /* --- Stats chart --- */
 .chart-card{position:relative;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:22px;padding:19px 18px 18px;margin-bottom:14px}
 .chart-card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--kf-green),var(--kf-coral))}
@@ -279,6 +285,7 @@ textarea.field-input{resize:vertical;font-family:inherit}
 
   .tab{color:var(--muted)}
   .tab-bar{background:#1B2320}
+  .period-select{background:#1B2320}
   .status-filter-btn{background:#262222}
   .status-filter-panel{background:#1B2320;border-color:#2A3532}
   .status-filter-item:hover{background:#222626}

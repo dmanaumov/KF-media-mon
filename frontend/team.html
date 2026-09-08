@@ -112,6 +112,12 @@
 
       <!-- Статистика -->
       <section class="tab-panel" id="panelStats" hidden>
+        <div class="period-select" id="statsPeriodWrap" hidden>
+          <button type="button" class="period-btn" data-period="3">3 мес</button>
+          <button type="button" class="period-btn" data-period="6">6 мес</button>
+          <button type="button" class="period-btn" data-period="12">12 мес</button>
+          <button type="button" class="period-btn active" data-period="all">Всё время</button>
+        </div>
         <div class="reach-summary" id="statsSummary" hidden></div>
         <div class="chart-card" id="chartCard" hidden>
           <div class="chart-card-title">Медиаиндекс и число упоминаний по месяцам</div>

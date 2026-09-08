@@ -25,7 +25,7 @@ module.exports = {
   cacheTtlMs: parseInt(process.env.CACHE_TTL_MS || '10000', 10),
   requestTimeoutMs: parseInt(process.env.MM_REQUEST_TIMEOUT_MS || '15000', 10),
   debug: (process.env.DEBUG_MATTERMOST || 'false').toLowerCase() === 'true',
-  cronSecret: process.env.CRON_SECRET || '',
+  automationApiKey: process.env.AUTOMATION_API_KEY || '',
 
   databaseUrl: process.env.DATABASE_URL || '',
 

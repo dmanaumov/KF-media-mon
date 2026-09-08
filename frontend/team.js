@@ -11,6 +11,7 @@ const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&':
 
 const PROJECT_KEY = 'kf.team.project.v2';
 const STATUS_KEY = 'kf.team.statusFilter.v1';
+const PERIOD_KEY = 'kf.team.statsPeriod.v1';
 
 function loadSavedStatusFilter() {
   try {
@@ -41,6 +42,9 @@ let activeTab = 'tasks';
 let currentMentions = [];
 let editingMentionId = null;
 let currentStats = [];
+let statsPeriod = (() => {
+  try { return localStorage.getItem(PERIOD_KEY) || 'all'; } catch (e) { return 'all'; }
+})();
 
 const loginApp = document.getElementById('loginApp');
 const teamApp = document.getElementById('teamApp');
@@ -83,6 +87,7 @@ const webLoading = document.getElementById('webLoading');
 const webList = document.getElementById('webList');
 const webEmpty = document.getElementById('webEmpty');
 
+const statsPeriodWrap = document.getElementById('statsPeriodWrap');
 const statsSummary = document.getElementById('statsSummary');
 const chartCard = document.getElementById('chartCard');
 const statsChart = document.getElementById('statsChart');
@@ -677,9 +682,60 @@ function renderChart(el, stats) {
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMinYMid meet">${zeroLine}${bars}<path d="${linePath}" class="chart-line"></path>${dots}</svg>`;
 }
 
+// Period presets narrow the (sparse, months-with-data-only) stats array to
+// a calendar cutoff — purely client-side, no re-fetch needed since the
+// backend already returns the full history for the project.
+function filterStatsByPeriod(stats, period) {
+  if (period === 'all') return stats;
+  const n = parseInt(period, 10);
+  if (!n) return stats;
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - (n - 1), 1);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}`;
+  return stats.filter((s) => s.month >= cutoffKey);
+}
+
+function syncPeriodButtons() {
+  [...statsPeriodWrap.children].forEach((b) => b.classList.toggle('active', b.dataset.period === statsPeriod));
+}
+
+function renderStatsTabContent() {
+  if (!currentStats.length) {
+    statsPeriodWrap.hidden = true;
+    chartCard.hidden = true;
+    statsSummary.hidden = true;
+    statsEmpty.textContent = 'Пока нет данных для статистики — добавьте упоминания во вкладке «WEB».';
+    statsEmpty.hidden = false;
+    return;
+  }
+  statsPeriodWrap.hidden = false;
+  syncPeriodButtons();
+  const visible = filterStatsByPeriod(currentStats, statsPeriod);
+  if (!visible.length) {
+    chartCard.hidden = true;
+    statsSummary.hidden = true;
+    statsEmpty.textContent = 'Нет упоминаний за выбранный период.';
+    statsEmpty.hidden = false;
+    return;
+  }
+  statsEmpty.hidden = true;
+  renderStatsSummary(visible);
+  chartCard.hidden = false;
+  renderChart(statsChart, visible);
+}
+
+statsPeriodWrap.addEventListener('click', (e) => {
+  const btn = e.target.closest('.period-btn');
+  if (!btn) return;
+  statsPeriod = btn.dataset.period;
+  try { localStorage.setItem(PERIOD_KEY, statsPeriod); } catch (e) {}
+  renderStatsTabContent();
+});
+
 async function loadStatsTab() {
   statsLoading.hidden = false;
   statsEmpty.hidden = true;
+  statsPeriodWrap.hidden = true;
   chartCard.hidden = true;
   statsSummary.hidden = true;
   if (!selectedProjectId) {
@@ -692,14 +748,7 @@ async function loadStatsTab() {
     const data = await teamApi(`/mentions/stats?project=${encodeURIComponent(selectedProjectId)}`);
     currentStats = data.stats || [];
     statsLoading.hidden = true;
-    if (!currentStats.length) {
-      statsEmpty.textContent = 'Пока нет данных для статистики — добавьте упоминания во вкладке «WEB».';
-      statsEmpty.hidden = false;
-      return;
-    }
-    renderStatsSummary(currentStats);
-    chartCard.hidden = false;
-    renderChart(statsChart, currentStats);
+    renderStatsTabContent();
   } catch (err) {
     statsLoading.hidden = true;
     statsEmpty.textContent = 'Не удалось загрузить статистику: ' + err.message;
