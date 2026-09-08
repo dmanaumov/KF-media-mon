@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR-отчёт</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="page">
+    <header class="head">
+      <div class="head-top">
+        <div class="brand-title" id="brandTitle">PR-отчёт</div>
+        <div class="head-right">
+          <a class="head-icon-link" id="statLink" href="/team" title="Кабинет команды" aria-label="Кабинет команды">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </a>
+        </div>
+      </div>
+      <div class="brand-sub" id="brandSub">Проект</div>
+    </header>
+
+    <div class="reach-summary" id="reachSummary" hidden></div>
+
+    <div class="filters" id="filters" hidden></div>
+    <div class="stack" id="list"></div>
+
+    <div class="loading" id="loading" hidden>Загружаем отчёт…</div>
+    <div class="empty" id="empty" hidden></div>
+    <div class="error-box" id="errorBox" hidden></div>
+
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

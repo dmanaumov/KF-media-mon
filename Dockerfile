@@ -9,5 +9,5 @@ COPY . .
 
 EXPOSE 3000
 
-# migrate.sql использует CREATE TABLE IF NOT EXISTS — безопасно гонять при каждом старте
-CMD ["sh", "-c", "node src/migrate.js && node src/server.js"]
+# initSchema() в db.js гоняется при каждом старте (CREATE TABLE IF NOT EXISTS)
+CMD ["node", "src/server.js"]

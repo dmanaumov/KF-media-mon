@@ -1,104 +1,232 @@
-require('dotenv').config();
 const express = require('express');
-const cookieSession = require('cookie-session');
+const compression = require('compression');
 const path = require('path');
-const { pool } = require('./db');
+const config = require('./config');
+const mm = require('./mattermostClient');
+const db = require('./db');
+const teamAuth = require('./teamAuth');
+const projectSettings = require('./projectSettings');
+const { buildTasks, projectOptions, statusOptions } = require('./taskMapper');
 
 const app = express();
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, '..', 'views'));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(compression());
+app.use(express.json());
+
+// --- Board loading with lazy TTL cache (matches SMM: in-memory only) ---
+const boardCache = new Map(); // boardId -> { expires, board, cards }
+
+async function loadBoard(boardId, { fresh = false } = {}) {
+  const cached = boardCache.get(boardId);
+  if (!fresh && config.cacheTtlMs > 0 && cached && cached.expires > Date.now()) {
+    return cached;
+  }
+  const [board, cards] = await Promise.all([
+    mm.getBoard(boardId, config.teamId),
+    mm.listCards(boardId),
+  ]);
+  const entry = { board, cards, expires: Date.now() + config.cacheTtlMs };
+  boardCache.set(boardId, entry);
+  return entry;
+}
+
+function invalidate() {
+  boardCache.delete(config.mattermostBoardId);
+}
+
+async function loadTeamTasks(opts = {}) {
+  const { board, cards } = await loadBoard(config.mattermostBoardId, { fresh: !!opts.fresh });
+  return buildTasks(board, cards, opts);
+}
+
+// --- Auth routes (same mechanics as SMM /team) ---
+app.post('/api/team/login', async (req, res) => {
+  const { login_id, password } = req.body || {};
+  if (!login_id || !password) {
+    return res.status(400).json({ error: 'missing_credentials', message: 'Введите логин и пароль Mattermost.' });
+  }
+  try {
+    const { token, user } = await mm.loginAs(String(login_id), String(password));
+    const sessionId = await teamAuth.createSession(token, user);
+    teamAuth.setSessionCookie(res, sessionId);
+    res.json({ user, role: teamAuth.roleFor(user), access: accessFor(user) });
+  } catch (err) {
+    res.status(401).json({ error: 'login_failed', message: err.message || 'Неверный логин или пароль.' });
+  }
+});
+
+function accessFor(user) {
+  const role = teamAuth.roleFor(user);
+  return { admin: role.admin, staffProjectsPath: config.adminPath };
+}
+
+app.post('/api/team/logout', (req, res) => {
+  teamAuth.destroySession(teamAuth.sessionIdFromRequest(req));
+  teamAuth.clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get('/api/team/me', (req, res) => {
+  const session = teamAuth.getSession(teamAuth.sessionIdFromRequest(req));
+  if (!session) return res.status(401).json({ error: 'not_logged_in' });
+  res.json({ user: session.user, role: teamAuth.roleFor(session.user), access: accessFor(session.user) });
+});
+
+// --- Team cabinet data (requireTeamAuth) ---
+app.get('/api/team/projects', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const { board } = await loadBoard(config.mattermostBoardId);
+    res.json({ projects: projectOptions(board) });
+  } catch (err) {
+    console.error('[api] /api/team/projects failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+app.get('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const { project, status, fact } = req.query;
+    const result = await loadTeamTasks({
+      project: project || '',
+      onlyFacts: fact === '1',
+      statusFilter: status || '',
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[api] /api/team/tasks failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+// --- Client cabinet (anonymous link mechanics, same as SMM) ---
+app.get('/api/links/:token', async (req, res) => {
+  const resolved = await projectSettings.resolveToken(req.params.token);
+  if (!resolved) {
+    return res.status(404).json({
+      error: 'link_not_found',
+      message: 'Ссылка недействительна или была отозвана. Обратитесь к вашему менеджеру за новой ссылкой.',
+    });
+  }
+  try {
+    const { board } = await loadBoard(resolved.boardId);
+    const label = projectLabelFor(board, resolved.projectId);
+    res.json({ boardId: resolved.boardId, projectId: resolved.projectId, name: label });
+  } catch (err) {
+    console.error('[api] /api/links/:token failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+function projectLabelFor(board, projectId) {
+  const { optionLabelById, findPropertyDef } = require('./taskMapper');
+  const prop = findPropertyDef(board, config.projectPropertyName);
+  return prop ? optionLabelById(prop, projectId) || '' : '';
+}
+
+app.get('/api/tasks', async (req, res) => {
+  const project = req.query.project || '';
+  if (!project) {
+    return res.status(400).json({ error: 'missing_project', message: 'Не указан проект.' });
+  }
+  try {
+    const result = await loadTeamTasks({ project, onlyFacts: true });
+    if (!result.meta.projectFilterMatched) {
+      return res.status(404).json({ error: 'project_not_found', message: 'Такой проект не найден на борде.' });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('[api] /api/tasks failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+// --- Admin: client link generator + summary (requireAdminAuth) ---
+app.get('/api/projects', teamAuth.requireAdminAuth, async (req, res) => {
+  try {
+    const { board, cards } = await loadBoard(config.mattermostBoardId);
+    const projects = projectOptions(board);
+    const statusOptionsList = statusOptions(board);
+    const data = await Promise.all(
+      projects.map(async (p) => {
+        const token = await projectSettings.getToken(config.mattermostBoardId, p.id);
+        const facts = buildTasks(board, cards, { project: p.id, onlyFacts: true }).tasks;
+        const published = facts.filter((t) => String(t.status.label || '').trim().toLowerCase() === 'опубликован');
+        const reachSum = facts.reduce((acc, t) => acc + (t.uvm || 0), 0);
+        return {
+          projectId: p.id,
+          label: p.label,
+          token,
+          link: `/l/${token}`,
+          factsCount: facts.length,
+          publishedCount: published.length,
+          reachSum,
+          lastPublishedDate: null,
+        };
+      })
+    );
+    res.json({ projects: data, statuses: statusOptionsList });
+  } catch (err) {
+    console.error('[api] /api/projects failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+app.post('/api/projects/:projectId/regenerate-link', teamAuth.requireAdminAuth, async (req, res) => {
+  try {
+    const token = await projectSettings.regenerateToken(config.mattermostBoardId, req.params.projectId);
+    invalidate();
+    res.json({ token, link: `/l/${token}` });
+  } catch (err) {
+    console.error('[api] regenerate-link failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Static frontend (same layout as SMM) ---
+const frontendDir = path.join(__dirname, '..', 'frontend');
 app.use(
-  cookieSession({
-    name: 'prm_session',
-    keys: [process.env.SESSION_SECRET || 'dev-secret'],
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+  express.static(frontendDir, {
+    setHeaders: (res, filePath) => {
+      if (/\.(css|js)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else if (/\.(png|jpe?g|gif|svg|webp|ico)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+      }
+    },
   })
 );
 
-function requireAuth(req, res, next) {
-  if (req.session && req.session.authed) return next();
-  return res.redirect('/login');
+app.get('/l/:token', (req, res) => res.sendFile(path.join(frontendDir, 'index.html')));
+app.get(config.adminPath, teamAuth.requireAdminAuth, (req, res) => res.sendFile(path.join(frontendDir, 'admin.html')));
+app.get(config.teamCabinetPath, (req, res) => res.sendFile(path.join(frontendDir, 'team.html')));
+app.get('/', (req, res) => res.redirect(config.teamCabinetPath));
+
+async function waitForDb(maxAttempts = 15, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await db.initSchema();
+      return;
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      console.warn(`[startup] database not ready yet (attempt ${attempt}/${maxAttempts}): ${err.message} — retrying in ${delayMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
-app.get('/login', (req, res) => {
-  res.render('login', { error: null });
-});
-
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === process.env.STAFF_AUTH_USER && password === process.env.STAFF_AUTH_PASSWORD) {
-    req.session.authed = true;
-    return res.redirect('/');
+(async () => {
+  try {
+    await waitForDb();
+    await teamAuth.restoreSessions();
+  } catch (err) {
+    console.error('[startup] database init failed — client links/sessions will not work:', err.message);
   }
-  return res.render('login', { error: 'Неверный логин или пароль' });
-});
-
-app.get('/logout', (req, res) => {
-  req.session = null;
-  res.redirect('/login');
-});
-
-// --- Дашборд фактов ---
-app.get('/', requireAuth, async (req, res) => {
-  const clientFilter = req.query.client || '';
-  const statusFilter = req.query.status || '';
-
-  const clientsRes = await pool.query('SELECT id, name FROM clients ORDER BY name');
-
-  const params = [];
-  const where = [];
-  if (clientFilter) {
-    params.push(clientFilter);
-    where.push(`c.name = $${params.length}`);
-  }
-  if (statusFilter) {
-    params.push(statusFilter);
-    where.push(`f.status = $${params.length}`);
-  }
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-  const factsRes = await pool.query(
-    `SELECT f.id, f.title, f.status, f.publish_date, f.url, f.reach_estimate, f.reach_source,
-            c.name AS client_name, p.display_name AS platform_name, p.tier AS platform_tier,
-            (SELECT count(*) FROM publications pub WHERE pub.fact_id = f.id AND pub.confirmed) AS reprints_found
-     FROM facts f
-     LEFT JOIN clients c ON c.id = f.client_id
-     LEFT JOIN platforms p ON p.id = f.platform_id
-     ${whereSql}
-     ORDER BY f.publish_date DESC NULLS LAST, f.id DESC`,
-    params
-  );
-
-  const statusesRes = await pool.query(
-    'SELECT DISTINCT status FROM facts WHERE status IS NOT NULL ORDER BY status'
-  );
-
-  res.render('dashboard', {
-    clients: clientsRes.rows,
-    facts: factsRes.rows,
-    statuses: statusesRes.rows.map((r) => r.status),
-    clientFilter,
-    statusFilter,
+  app.listen(config.port, () => {
+    console.log(`PR-мониторинг слушает на :${config.port}`);
+    if (!config.mattermostUrl) {
+      console.warn('[startup] MATTERMOST_URL not set — API calls will fail until configured.');
+    }
+    if (!config.databaseUrl) {
+      console.warn('[startup] DATABASE_URL not set — client links will not work until Postgres is configured.');
+    }
   });
-});
-
-// --- Сводка по клиентам ---
-app.get('/clients', requireAuth, async (req, res) => {
-  const summaryRes = await pool.query(
-    `SELECT c.name,
-            count(f.id) AS facts_count,
-            count(f.id) FILTER (WHERE f.status = 'Опубликован') AS published_count,
-            count(f.reach_estimate) AS reach_known_count,
-            coalesce(sum(f.reach_estimate), 0) AS reach_sum
-     FROM clients c
-     LEFT JOIN facts f ON f.client_id = c.id
-     GROUP BY c.name
-     ORDER BY facts_count DESC`
-  );
-  res.render('clients', { rows: summaryRes.rows });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`PR-мониторинг слушает на :${PORT}`));
+})();

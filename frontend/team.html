@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR-кабинет</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="page">
+    <div class="login-box" id="loginApp" hidden>
+      <div class="brand-title">PR-кабинет</div>
+      <p class="login-intro">Вход через аккаунт Mattermost</p>
+      <div>
+        <div class="field-label">Логин (email)</div>
+        <input class="field-input" id="loginLogin" type="text" autocomplete="username" placeholder="you@firma.ru">
+      </div>
+      <div>
+        <div class="field-label">Пароль</div>
+        <input class="field-input" id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="btn approve" id="loginSubmit">Войти</button>
+      <div class="error-box" id="loginError" hidden style="margin-top:14px"></div>
+    </div>
+
+    <div id="teamApp" hidden>
+      <header class="head">
+        <div class="head-top">
+          <div style="min-width:0">
+            <div class="brand-title">PR-кабинет</div>
+            <div class="brand-sub" id="teamUserName">Команда</div>
+          </div>
+          <div class="head-right">
+            <button class="cal-toggle" id="teamCalendarToggle" title="Календарь" aria-label="Календарь">🗓️</button>
+            <a class="head-icon-link" id="statLink" href="/team" title="Кабинет команды" aria-label="Кабинет команды" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </a>
+            <a class="head-icon-link" id="adminLink" href="#" title="Админка" aria-label="Админка" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </a>
+            <button class="cal-toggle" id="logoutBtn" title="Выйти" aria-label="Выйти">⏻</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="filters" id="teamFilters"></div>
+      <div class="filters-select" id="teamProjectFilterRow" hidden style="margin-bottom:12px">
+        <select class="filter-select" id="teamProjectFilter"><option value="">Все проекты</option></select>
+      </div>
+
+      <div id="teamListView">
+        <div class="loading" id="teamLoading" hidden>Загружаем задачи…</div>
+        <div class="stack" id="teamList"></div>
+        <div class="empty" id="teamEmpty" hidden></div>
+      </div>
+
+      <div class="calendar-view" id="teamCalendarView" hidden>
+        <div class="cal-header">
+          <button class="cal-back" id="teamCalBack">← Обратно к списку</button>
+          <div class="cal-nav">
+            <button class="cal-nav-btn" id="teamCalPrev">‹</button>
+            <div class="cal-title" id="teamCalTitle"></div>
+            <button class="cal-nav-btn" id="teamCalNext">›</button>
+          </div>
+        </div>
+        <div class="cal-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+        <div class="cal-grid" id="teamCalendarGrid"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+  <script src="/team.js"></script>
+</body>
+</html>
