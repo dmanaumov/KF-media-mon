@@ -12,7 +12,7 @@
       <div class="head-top">
         <div style="min-width:0">
           <div class="brand-title">Админка · PR-кабинет</div>
-          <div class="brand-sub">Генератор клиентских ссылок и сводка по фактам</div>
+          <div class="brand-sub">Проекты, клиентские ссылки и карточки клиентов</div>
         </div>
         <div class="head-right">
           <a class="head-icon-link" id="backLink" href="/team" title="Кабинет команды" aria-label="Кабинет команды">
@@ -29,8 +29,7 @@
 
     <div class="admin-card" id="addCard" hidden>
       <h2>Как это работает</h2>
-      <p>Каждому клиенту (проекту на доске) можно сгенерировать персональную ссылку. По ней клиент видит только свой проект: факты публикаций и охват. Если ссылка скомпрометирована — пересоздайте её; старый токен сразу перестанет работать.</p>
-      <p class="hint">Сгенерируйте ссылку кнопкой в строке проекта и отправьте клиенту.</p>
+      <p>Каждому клиенту (проекту на доске) можно сгенерировать персональную ссылку и заполнить карточку — она поможет искать упоминания в сети. Отметьте проект архивным, чтобы он пропал из списка у команды; данные и ссылка при этом сохранятся.</p>
     </div>
 
     <div id="tableWrap" hidden>
@@ -52,6 +51,55 @@
     <div class="empty" id="empty" hidden></div>
     <div class="toast" id="toast" role="status"></div>
   </div>
+
+  <div class="modal-overlay" id="settingsModalOverlay" hidden>
+    <div class="modal-card wide">
+      <div class="modal-title" id="settingsModalTitle">Карточка клиента</div>
+
+      <label class="check-row">
+        <input type="checkbox" id="setArchived">
+        <span>Архивный проект — скрыть из списка у команды</span>
+      </label>
+
+      <div class="modal-row">
+        <div>
+          <div class="field-label">Название (рус.)</div>
+          <input class="field-input" id="setNameRu" type="text" placeholder="ООО «Ромашка»">
+        </div>
+        <div>
+          <div class="field-label">Название (англ.)</div>
+          <input class="field-input" id="setNameEn" type="text" placeholder="Romashka LLC">
+        </div>
+      </div>
+
+      <div class="modal-row">
+        <div>
+          <div class="field-label">Гендиректор / первое лицо</div>
+          <input class="field-input" id="setCeo" type="text" placeholder="Иванов Иван Иванович">
+        </div>
+        <div>
+          <div class="field-label">Сайт</div>
+          <input class="field-input" id="setWebsite" type="text" placeholder="https://…">
+        </div>
+      </div>
+
+      <div class="field-label">Медиапрофиль спикера</div>
+      <textarea class="field-input" id="setSpeaker" rows="3" placeholder="ФИО, должность, по каким темам выступает, где искать упоминания…"></textarea>
+
+      <div class="field-label">Социальные сети</div>
+      <div id="socialRows" class="social-rows"></div>
+      <button type="button" class="mini-btn" id="addSocialRow">+ Добавить соцсеть</button>
+
+      <div class="field-label">Другая полезная информация для поиска</div>
+      <textarea class="field-input" id="setOther" rows="3" placeholder="Бренды, старые названия, ключевые товары, партнёры…"></textarea>
+
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="settingsCancelBtn">Отмена</button>
+        <button type="button" class="btn approve" id="settingsSaveBtn">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/admin.js"></script>
 </body>
 </html>

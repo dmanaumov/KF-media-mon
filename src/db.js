@@ -29,6 +29,19 @@ async function initSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS project_settings_link_token_idx
       ON project_settings (link_token);
   `);
+
+  // Project "card" fields (archive flag, client identity, speaker profile,
+  // socials) — used by the admin settings panel and, later, by the search
+  // pipeline (phase 2, see pr-monitoring-architecture.md).
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS client_name_ru text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS client_name_en text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS ceo_name text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS website text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS social_links jsonb NOT NULL DEFAULT '[]'::jsonb;`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS speaker_profile text NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE project_settings ADD COLUMN IF NOT EXISTS other_info text NOT NULL DEFAULT '';`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS team_sessions (
       id text PRIMARY KEY,
@@ -47,6 +60,29 @@ async function initSchema() {
     END $$;
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS team_sessions_expires_idx ON team_sessions (expires_at);`);
+
+  // Manually-logged web mentions ("WEB" tab) — bridges the gap until the
+  // search pipeline (phase 2) is live: staff log reprints/comments by hand,
+  // tagging sentiment/urgency; the same table will receive rows from the
+  // automated search later.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mentions (
+      id bigserial PRIMARY KEY,
+      board_id text NOT NULL,
+      project_id text NOT NULL,
+      url text NOT NULL DEFAULT '',
+      source text NOT NULL DEFAULT '',
+      published_at date,
+      sentiment text NOT NULL DEFAULT 'neutral',
+      urgent boolean NOT NULL DEFAULT false,
+      comment text NOT NULL DEFAULT '',
+      created_by text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS mentions_project_idx ON mentions (board_id, project_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS mentions_published_idx ON mentions (published_at);`);
 }
 
 module.exports = { pool, requirePool, initSchema };

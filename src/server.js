@@ -6,6 +6,7 @@ const mm = require('./mattermostClient');
 const db = require('./db');
 const teamAuth = require('./teamAuth');
 const projectSettings = require('./projectSettings');
+const mentions = require('./mentions');
 const { buildTasks, projectOptions, statusOptions } = require('./taskMapper');
 
 const app = express();
@@ -36,6 +37,15 @@ function invalidate() {
 async function loadTeamTasks(opts = {}) {
   const { board, cards } = await loadBoard(config.mattermostBoardId, { fresh: !!opts.fresh });
   return buildTasks(board, cards, opts);
+}
+
+async function settingsMapSafe() {
+  try {
+    return await projectSettings.listSettingsMap(config.mattermostBoardId);
+  } catch (err) {
+    console.error('[api] failed to load project settings map:', err.message);
+    return new Map();
+  }
 }
 
 // --- Auth routes (same mechanics as SMM /team) ---
@@ -75,7 +85,10 @@ app.get('/api/team/me', (req, res) => {
 app.get('/api/team/projects', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const { board } = await loadBoard(config.mattermostBoardId);
-    res.json({ projects: projectOptions(board) });
+    const all = projectOptions(board);
+    const settingsMap = await settingsMapSafe();
+    const visible = all.filter((p) => !(settingsMap.get(p.id) || {}).archived);
+    res.json({ projects: visible });
   } catch (err) {
     console.error('[api] /api/team/projects failed:', err.message);
     res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
@@ -90,10 +103,94 @@ app.get('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
       onlyFacts: fact === '1',
       statusFilter: status || '',
     });
+    if (!project) {
+      // "Все проекты" view — still hide archived clients' tasks, matching
+      // their disappearance from the project dropdown.
+      const settingsMap = await settingsMapSafe();
+      result.tasks = result.tasks.filter(
+        (t) => !t.project || !t.project.id || !(settingsMap.get(t.project.id) || {}).archived
+      );
+      result.meta.projects = result.meta.projects.filter((p) => !(settingsMap.get(p.id) || {}).archived);
+    }
     res.json(result);
   } catch (err) {
     console.error('[api] /api/team/tasks failed:', err.message);
     res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+// --- WEB tab: manually-logged mentions (requireTeamAuth, project-scoped) ---
+function requireProjectParam(req, res) {
+  const project = ((req.query && req.query.project) || (req.body && req.body.project) || '').toString().trim();
+  if (!project) {
+    res.status(400).json({ error: 'missing_project', message: 'Выберите проект.' });
+    return null;
+  }
+  return project;
+}
+
+app.get('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
+  const project = requireProjectParam(req, res);
+  if (!project) return;
+  try {
+    const list = await mentions.listMentions(config.mattermostBoardId, project);
+    res.json({ mentions: list });
+  } catch (err) {
+    console.error('[api] /api/team/mentions GET failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.post('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
+  const project = requireProjectParam(req, res);
+  if (!project) return;
+  try {
+    const user = (req.teamSession && req.teamSession.user) || {};
+    const createdBy = user.username || user.email || '';
+    const m = await mentions.createMention(config.mattermostBoardId, project, req.body || {}, createdBy);
+    res.json({ mention: m });
+  } catch (err) {
+    console.error('[api] /api/team/mentions POST failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.put('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  const project = requireProjectParam(req, res);
+  if (!project) return;
+  try {
+    const m = await mentions.updateMention(req.params.id, config.mattermostBoardId, project, req.body || {});
+    if (!m) return res.status(404).json({ error: 'not_found', message: 'Упоминание не найдено.' });
+    res.json({ mention: m });
+  } catch (err) {
+    console.error('[api] /api/team/mentions PUT failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.delete('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  const project = requireProjectParam(req, res);
+  if (!project) return;
+  try {
+    const ok = await mentions.deleteMention(req.params.id, config.mattermostBoardId, project);
+    if (!ok) return res.status(404).json({ error: 'not_found', message: 'Упоминание не найдено.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] /api/team/mentions DELETE failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Статистика tab: monthly rollup of mentions ---
+app.get('/api/team/mentions/stats', teamAuth.requireTeamAuth, async (req, res) => {
+  const project = requireProjectParam(req, res);
+  if (!project) return;
+  try {
+    const stats = await mentions.monthlyStats(config.mattermostBoardId, project);
+    res.json({ stats });
+  } catch (err) {
+    console.error('[api] /api/team/mentions/stats failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
   }
 });
 
@@ -145,12 +242,14 @@ app.get('/api/projects', teamAuth.requireAdminAuth, async (req, res) => {
     const { board, cards } = await loadBoard(config.mattermostBoardId);
     const projects = projectOptions(board);
     const statusOptionsList = statusOptions(board);
+    const settingsMap = await settingsMapSafe();
     const data = await Promise.all(
       projects.map(async (p) => {
         const token = await projectSettings.getToken(config.mattermostBoardId, p.id);
         const facts = buildTasks(board, cards, { project: p.id, onlyFacts: true }).tasks;
         const published = facts.filter((t) => String(t.status.label || '').trim().toLowerCase() === 'опубликован');
         const reachSum = facts.reduce((acc, t) => acc + (t.uvm || 0), 0);
+        const s = settingsMap.get(p.id) || {};
         return {
           projectId: p.id,
           label: p.label,
@@ -160,6 +259,7 @@ app.get('/api/projects', teamAuth.requireAdminAuth, async (req, res) => {
           publishedCount: published.length,
           reachSum,
           lastPublishedDate: null,
+          archived: !!s.archived,
         };
       })
     );
@@ -177,6 +277,27 @@ app.post('/api/projects/:projectId/regenerate-link', teamAuth.requireAdminAuth, 
     res.json({ token, link: `/l/${token}` });
   } catch (err) {
     console.error('[api] regenerate-link failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Admin: project "card" (archive flag, client identity, socials) ---
+app.get('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, async (req, res) => {
+  try {
+    const settings = await projectSettings.getSettings(config.mattermostBoardId, req.params.projectId);
+    res.json({ settings });
+  } catch (err) {
+    console.error('[api] admin settings GET failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.put('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, async (req, res) => {
+  try {
+    const settings = await projectSettings.saveSettings(config.mattermostBoardId, req.params.projectId, req.body || {});
+    res.json({ settings });
+  } catch (err) {
+    console.error('[api] admin settings PUT failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
 });

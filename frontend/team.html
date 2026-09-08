@@ -32,39 +32,108 @@
           </div>
           <div class="head-right">
             <button class="cal-toggle" id="teamCalendarToggle" title="Календарь" aria-label="Календарь">🗓️</button>
-            <a class="head-icon-link" id="statLink" href="/team" title="Кабинет команды" aria-label="Кабинет команды" hidden>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </a>
             <a class="head-icon-link" id="adminLink" href="#" title="Админка" aria-label="Админка" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </a>
             <button class="cal-toggle" id="logoutBtn" title="Выйти" aria-label="Выйти">⏻</button>
           </div>
         </div>
+
+        <div class="project-switcher">
+          <select class="filter-select project-select" id="teamProjectSelect"><option value="">Все проекты</option></select>
+        </div>
+
+        <nav class="tab-bar" id="teamTabBar">
+          <button type="button" class="tab active" data-tab="tasks">Текущие задачи</button>
+          <button type="button" class="tab" data-tab="web">WEB<span class="tab-badge" id="webAlertBadge" hidden>0</span></button>
+          <button type="button" class="tab" data-tab="stats">Статистика</button>
+        </nav>
       </header>
 
-      <div class="filters" id="teamFilters"></div>
-      <div class="filters-select" id="teamProjectFilterRow" hidden style="margin-bottom:12px">
-        <select class="filter-select" id="teamProjectFilter"><option value="">Все проекты</option></select>
-      </div>
+      <!-- Текущие задачи -->
+      <section class="tab-panel" id="panelTasks">
+        <div class="filters" id="teamFilters"></div>
 
-      <div id="teamListView">
-        <div class="loading" id="teamLoading" hidden>Загружаем задачи…</div>
-        <div class="stack" id="teamList"></div>
-        <div class="empty" id="teamEmpty" hidden></div>
-      </div>
+        <div id="teamListView">
+          <div class="loading" id="teamLoading" hidden>Загружаем задачи…</div>
+          <div class="stack" id="teamList"></div>
+          <div class="empty" id="teamEmpty" hidden></div>
+        </div>
 
-      <div class="calendar-view" id="teamCalendarView" hidden>
-        <div class="cal-header">
-          <button class="cal-back" id="teamCalBack">← Обратно к списку</button>
-          <div class="cal-nav">
-            <button class="cal-nav-btn" id="teamCalPrev">‹</button>
-            <div class="cal-title" id="teamCalTitle"></div>
-            <button class="cal-nav-btn" id="teamCalNext">›</button>
+        <div class="calendar-view" id="teamCalendarView" hidden>
+          <div class="cal-header">
+            <button class="cal-back" id="teamCalBack">← Обратно к списку</button>
+            <div class="cal-nav">
+              <button class="cal-nav-btn" id="teamCalPrev">‹</button>
+              <div class="cal-title" id="teamCalTitle"></div>
+              <button class="cal-nav-btn" id="teamCalNext">›</button>
+            </div>
+          </div>
+          <div class="cal-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+          <div class="cal-grid" id="teamCalendarGrid"></div>
+        </div>
+      </section>
+
+      <!-- WEB: упоминания -->
+      <section class="tab-panel" id="panelWeb" hidden>
+        <div class="web-toolbar">
+          <div class="hint" id="webScopeHint"></div>
+          <button type="button" class="btn approve small" id="addMentionBtn">+ Добавить упоминание</button>
+        </div>
+        <div class="loading" id="webLoading" hidden>Загружаем упоминания…</div>
+        <div class="stack" id="webList"></div>
+        <div class="empty" id="webEmpty" hidden></div>
+      </section>
+
+      <!-- Статистика -->
+      <section class="tab-panel" id="panelStats" hidden>
+        <div class="reach-summary" id="statsSummary" hidden></div>
+        <div class="chart-card" id="chartCard" hidden>
+          <div class="chart-card-title">Медиаиндекс и число упоминаний по месяцам</div>
+          <div class="chart-legend">
+            <span><i class="dot dot-bar"></i>Упоминания</span>
+            <span><i class="dot dot-line"></i>Медиаиндекс (позитив − негатив)</span>
+          </div>
+          <div id="statsChart"></div>
+        </div>
+        <div class="loading" id="statsLoading" hidden>Считаем статистику…</div>
+        <div class="empty" id="statsEmpty" hidden></div>
+      </section>
+    </div>
+
+    <!-- Модалка добавления/редактирования упоминания -->
+    <div class="modal-overlay" id="mentionModalOverlay" hidden>
+      <div class="modal-card">
+        <div class="modal-title" id="mentionModalTitle">Новое упоминание</div>
+        <div class="field-label">Ссылка</div>
+        <input class="field-input" id="mentionUrl" type="text" placeholder="https://…">
+        <div class="field-label">Источник / СМИ</div>
+        <input class="field-input" id="mentionSource" type="text" placeholder="Например, Известия">
+        <div class="modal-row">
+          <div>
+            <div class="field-label">Дата</div>
+            <input class="field-input" id="mentionDate" type="date">
+          </div>
+          <div>
+            <div class="field-label">Тональность</div>
+            <select class="field-input" id="mentionSentiment">
+              <option value="positive">Позитив</option>
+              <option value="neutral" selected>Нейтрально</option>
+              <option value="negative">Негатив</option>
+            </select>
           </div>
         </div>
-        <div class="cal-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
-        <div class="cal-grid" id="teamCalendarGrid"></div>
+        <label class="check-row">
+          <input type="checkbox" id="mentionUrgent">
+          <span>🚨 Срочно — требует немедленного внимания</span>
+        </label>
+        <div class="field-label">Комментарий</div>
+        <textarea class="field-input" id="mentionComment" rows="3" placeholder="О чём упоминание, контекст…"></textarea>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost warn" id="mentionDeleteBtn" hidden>Удалить</button>
+          <button type="button" class="btn ghost" id="mentionCancelBtn">Отмена</button>
+          <button type="button" class="btn approve" id="mentionSaveBtn">Сохранить</button>
+        </div>
       </div>
     </div>
 
