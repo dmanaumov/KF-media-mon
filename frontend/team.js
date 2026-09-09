@@ -100,7 +100,6 @@ const mentionUrl = document.getElementById('mentionUrl');
 const mentionSource = document.getElementById('mentionSource');
 const mentionDate = document.getElementById('mentionDate');
 const mentionSentiment = document.getElementById('mentionSentiment');
-const mentionEventType = document.getElementById('mentionEventType');
 const mentionUrgent = document.getElementById('mentionUrgent');
 const mentionComment = document.getElementById('mentionComment');
 const mentionCancelBtn = document.getElementById('mentionCancelBtn');
@@ -201,17 +200,6 @@ function deadlineLabel(dateStr) {
   return `${+m[3]} ${MONTHS_RU[+m[2] - 1]}`;
 }
 
-// Days from today until the deadline (dates are plain YYYY-MM-DD, compared in UTC).
-// Returns null when absent/invalid, negative when the deadline already passed.
-function daysToDeadline(dateStr) {
-  const m = dateStr && dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  const due = Date.UTC(+m[1], +m[2] - 1, +m[3]);
-  const now = new Date();
-  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.round((due - today) / 86400000);
-}
-
 // ==================== Project switcher ====================
 
 function projectLabelFor(id) {
@@ -247,7 +235,6 @@ teamProjectSelect.addEventListener('change', async () => {
   if (activeTab === 'tasks') loadTasks();
   else if (activeTab === 'web') renderMentions();
   else if (activeTab === 'stats') loadStatsTab();
-  if (!scenariosPanel.hidden) renderScenariosPanel(scenariosPanel);
 });
 
 // ==================== Tabs ====================
@@ -344,20 +331,17 @@ statusFilterNone.addEventListener('click', () => {
 
 function taskCardHtml(t) {
   const chip = t.status && t.status.label ? `<span class="status ${statusClass(t.status.label)}">${esc(t.status.label)}</span>` : '';
-  const due = daysToDeadline(t.deadline);
-  const burning = due !== null && due >= 0 && due <= 3;
-  const overdue = due !== null && due < 0;
-  const cardClass = overdue ? 'card overdue' : burning ? 'card burning' : 'card';
   const metaBits = [
     !selectedProjectId && t.project && t.project.label ? `${esc(t.project.label)}` : '',
     t.smi ? `📰 ${esc(t.smi)}` : '',
     t.type ? `${esc(t.type)}` : '',
     t.priority ? `⚑ ${esc(t.priority)}` : '',
-    t.deadline ? `${burning ? '🔥 ' : ''}🗓 ${deadlineLabel(t.deadline)}` : '',
+    t.assignee && t.assignee.label ? `👤 ${esc(t.assignee.label)}` : '',
+    t.deadline ? `🗓 ${deadlineLabel(t.deadline)}` : '',
   ].filter(Boolean).join('  ·  ');
   const reach = t.uvm ? `Охват: <b>${formatReach(t.uvm)}</b>` : '';
   return `
-    <article class="${cardClass}">
+    <article class="card task-card" data-id="${esc(t.id)}">
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
@@ -370,6 +354,13 @@ function taskCardHtml(t) {
     </article>
   `;
 }
+
+teamList.addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const card = e.target.closest('.task-card');
+  if (!card) return;
+  openTaskModal(card.dataset.id);
+});
 
 function renderTasks() {
   const visible = activeStatuses
@@ -494,6 +485,205 @@ function closeCalendar() {
   updateCalendarToggleIcon(false);
 }
 
+// ==================== Карточка задачи (просмотр/редактирование) ====================
+
+const taskModalOverlay = document.getElementById('taskModalOverlay');
+const taskTitle = document.getElementById('taskTitle');
+const taskModalClose = document.getElementById('taskModalClose');
+const taskModalLoading = document.getElementById('taskModalLoading');
+const taskModalBody = document.getElementById('taskModalBody');
+const taskStatus = document.getElementById('taskStatus');
+const taskProject = document.getElementById('taskProject');
+const taskAssignee = document.getElementById('taskAssignee');
+const taskSmi = document.getElementById('taskSmi');
+const taskDeadline = document.getElementById('taskDeadline');
+const taskUvm = document.getElementById('taskUvm');
+const taskUrl = document.getElementById('taskUrl');
+const taskText = document.getElementById('taskText');
+const taskAttachmentsEl = document.getElementById('taskAttachments');
+const taskUploadZone = document.getElementById('taskUploadZone');
+const taskFileInput = document.getElementById('taskFileInput');
+const taskCommentList = document.getElementById('taskCommentList');
+const taskCommentInput = document.getElementById('taskCommentInput');
+const taskCommentSend = document.getElementById('taskCommentSend');
+const taskModalCancel = document.getElementById('taskModalCancel');
+const taskModalSave = document.getElementById('taskModalSave');
+
+let openTaskId = null;
+
+function autoGrowTitle() {
+  taskTitle.style.height = 'auto';
+  taskTitle.style.height = `${taskTitle.scrollHeight}px`;
+}
+taskTitle.addEventListener('input', autoGrowTitle);
+
+function fillSelect(el, options, currentId, placeholder) {
+  el.innerHTML = (placeholder ? `<option value="">${esc(placeholder)}</option>` : '') +
+    (options || []).map((o) => `<option value="${esc(o.id)}"${o.id === currentId ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
+}
+
+function commentInitials(name) {
+  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+
+function commentTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function renderComments(comments) {
+  if (!comments || !comments.length) {
+    taskCommentList.innerHTML = '<div class="task-chat-empty">Пока нет сообщений — начните обсуждение.</div>';
+    return;
+  }
+  taskCommentList.innerHTML = comments.map((c) => `
+    <div class="task-chat-item">
+      <div class="chat-avatar">${esc(commentInitials(c.author))}</div>
+      <div class="chat-bubble">
+        <div class="chat-meta"><b>${esc(c.author)}</b><span>${esc(commentTime(c.createdAt))}</span></div>
+        <div class="chat-text">${esc(c.text)}</div>
+      </div>
+    </div>
+  `).join('');
+  taskCommentList.scrollTop = taskCommentList.scrollHeight;
+}
+
+const ATTACHMENT_ICON = { image: '🖼', attachment: '📎' };
+function renderAttachments(list) {
+  if (!list || !list.length) { taskAttachmentsEl.innerHTML = ''; return; }
+  taskAttachmentsEl.innerHTML = list.map((a) => {
+    const href = a.fileId ? `/api/team/tasks/${encodeURIComponent(openTaskId)}/attachments/${encodeURIComponent(a.fileId)}` : '#';
+    return `<a class="attachment-chip" href="${esc(href)}" target="_blank" rel="noopener">${ATTACHMENT_ICON[a.type] || '📎'} ${esc(a.title)}</a>`;
+  }).join('');
+}
+
+function fillTaskForm(detail, meta) {
+  taskTitle.value = detail.title === '(без названия)' ? '' : detail.title;
+  autoGrowTitle();
+  fillSelect(taskStatus, meta.statuses, detail.status && detail.status.id, null);
+  fillSelect(taskProject, meta.projects, detail.project && detail.project.id, null);
+  fillSelect(taskAssignee, meta.assignee && meta.assignee.options, detail.assignee && detail.assignee.id, '—');
+  taskSmi.value = detail.smi || '';
+  taskDeadline.value = detail.deadline || '';
+  taskUvm.value = detail.uvm != null ? detail.uvm : '';
+  taskUrl.value = detail.pubUrl || '';
+  taskText.value = detail.text || '';
+  renderAttachments(detail.attachments);
+  renderComments(detail.comments);
+}
+
+async function openTaskModal(taskId) {
+  openTaskId = taskId;
+  taskModalOverlay.hidden = false;
+  taskModalBody.hidden = true;
+  taskModalLoading.hidden = false;
+  taskModalSave.disabled = true;
+  try {
+    const data = await teamApi(`/tasks/${encodeURIComponent(taskId)}`);
+    taskModalLoading.hidden = true;
+    taskModalBody.hidden = false;
+    taskModalSave.disabled = false;
+    fillTaskForm(data.task, data.meta);
+  } catch (err) {
+    taskModalLoading.hidden = true;
+    showToast('Не удалось открыть карточку: ' + err.message);
+    closeTaskModal();
+  }
+}
+
+function closeTaskModal() {
+  taskModalOverlay.hidden = true;
+  openTaskId = null;
+}
+
+taskModalClose.addEventListener('click', closeTaskModal);
+taskModalCancel.addEventListener('click', closeTaskModal);
+taskModalOverlay.addEventListener('click', (e) => { if (e.target === taskModalOverlay) closeTaskModal(); });
+
+taskModalSave.addEventListener('click', async () => {
+  if (!openTaskId) return;
+  const uvmRaw = taskUvm.value.trim();
+  const body = {
+    title: taskTitle.value.trim(),
+    statusId: taskStatus.value || null,
+    projectId: taskProject.value || null,
+    assigneeId: taskAssignee.value || null,
+    smi: taskSmi.value.trim(),
+    deadline: taskDeadline.value || null,
+    uvm: uvmRaw ? uvmRaw.replace(/[^\d.]/g, '') : null,
+    url: taskUrl.value.trim(),
+    text: taskText.value,
+  };
+  taskModalSave.disabled = true;
+  const originalLabel = taskModalSave.textContent;
+  taskModalSave.textContent = 'Сохраняем…';
+  try {
+    await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`, { method: 'PATCH', body });
+    showToast('Карточка сохранена.');
+    closeTaskModal();
+    loadTasks();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    taskModalSave.disabled = false;
+    taskModalSave.textContent = originalLabel;
+  }
+});
+
+taskCommentSend.addEventListener('click', async () => {
+  const text = taskCommentInput.value.trim();
+  if (!text || !openTaskId) return;
+  taskCommentSend.disabled = true;
+  try {
+    await teamApi(`/tasks/${encodeURIComponent(openTaskId)}/comments`, { method: 'POST', body: { text } });
+    taskCommentInput.value = '';
+    const data = await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`);
+    renderComments(data.task.comments);
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    taskCommentSend.disabled = false;
+  }
+});
+taskCommentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') taskCommentSend.click(); });
+
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+taskUploadZone.addEventListener('click', (e) => { e.preventDefault(); taskFileInput.click(); });
+taskFileInput.addEventListener('change', async () => {
+  const file = taskFileInput.files && taskFileInput.files[0];
+  taskFileInput.value = '';
+  if (!file || !openTaskId) return;
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    showToast('Файл больше 8 МБ — выберите файл меньшего размера.');
+    return;
+  }
+  showToast('Загружаем файл…');
+  try {
+    const dataBase64 = await readFileAsBase64(file);
+    await teamApi(`/tasks/${encodeURIComponent(openTaskId)}/attachments`, {
+      method: 'POST',
+      body: { filename: file.name, mimeType: file.type, dataBase64 },
+    });
+    const data = await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`);
+    renderAttachments(data.task.attachments);
+    showToast('Файл прикреплён.');
+  } catch (err) {
+    showToast('Не удалось загрузить файл: ' + err.message);
+  }
+});
+
 // ==================== WEB: упоминания ====================
 
 async function fetchMentionsForProject() {
@@ -519,7 +709,6 @@ function updateWebBadge() {
 
 const SENTIMENT_LABEL = { positive: 'Позитив', neutral: 'Нейтрально', negative: 'Негатив' };
 const SENTIMENT_CLASS = { positive: 'published', neutral: 'gray', negative: 'rejected' };
-const EVENT_TYPE_LABEL = { article: 'Статья / публикация', news: 'Новость' };
 
 function mentionCardHtml(m) {
   const isAlert = m.sentiment === 'negative' || m.urgent;
@@ -532,7 +721,6 @@ function mentionCardHtml(m) {
   ].filter(Boolean).join('  ·  ');
   return `
     <article class="card mention-card${isAlert ? ' alert' : ''}" data-id="${m.id}">
-      <button type="button" class="mention-delete" title="Удалить упоминание" aria-label="Удалить">×</button>
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
@@ -542,7 +730,6 @@ function mentionCardHtml(m) {
         </div>
         <div class="badges">
           <span class="status ${SENTIMENT_CLASS[m.sentiment] || 'gray'}">${SENTIMENT_LABEL[m.sentiment] || 'Нейтрально'}</span>
-          <span class="status gray">${EVENT_TYPE_LABEL[m.eventType] || 'Новость'}</span>
           ${m.urgent ? '<span class="status urgent-badge">🚨 Срочно</span>' : ''}
         </div>
       </div>
@@ -571,23 +758,7 @@ async function loadWebTab() {
   renderMentions();
 }
 
-webList.addEventListener('click', async (e) => {
-  const del = e.target.closest('.mention-delete');
-  if (del) {
-    e.stopPropagation();
-    const card = del.closest('.mention-card');
-    const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
-    if (!m || !selectedProjectId) return;
-    if (!window.confirm('Удалить это упоминание?')) return;
-    try {
-      await teamApi(`/mentions/${m.id}?project=${encodeURIComponent(selectedProjectId)}`, { method: 'DELETE' });
-      showToast('Упоминание удалено.');
-      await afterMentionsChanged();
-    } catch (err) {
-      showToast(err.message);
-    }
-    return;
-  }
+webList.addEventListener('click', (e) => {
   const card = e.target.closest('.mention-card');
   if (!card) return;
   const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
@@ -601,7 +772,6 @@ function openMentionModal(mention) {
   mentionSource.value = mention ? mention.source : '';
   mentionDate.value = mention ? mention.publishedAt : '';
   mentionSentiment.value = mention ? mention.sentiment : 'neutral';
-  mentionEventType.value = mention ? (mention.eventType || 'news') : 'news';
   mentionUrgent.checked = mention ? mention.urgent : false;
   mentionComment.value = mention ? mention.comment : '';
   mentionDeleteBtn.hidden = !mention;
@@ -631,7 +801,6 @@ mentionSaveBtn.addEventListener('click', async () => {
     source: mentionSource.value.trim(),
     publishedAt: mentionDate.value || null,
     sentiment: mentionSentiment.value,
-    eventType: mentionEventType.value,
     urgent: mentionUrgent.checked,
     comment: mentionComment.value.trim(),
   };
@@ -653,7 +822,6 @@ mentionSaveBtn.addEventListener('click', async () => {
 
 mentionDeleteBtn.addEventListener('click', async () => {
   if (!editingMentionId || !selectedProjectId) return;
-  if (!window.confirm('Удалить это упоминание?')) return;
   mentionDeleteBtn.disabled = true;
   try {
     await teamApi(`/mentions/${editingMentionId}?project=${encodeURIComponent(selectedProjectId)}`, { method: 'DELETE' });
@@ -807,8 +975,6 @@ const scnName = document.getElementById('scnName');
 const scnProject = document.getElementById('scnProject');
 const scnKeywords = document.getElementById('scnKeywords');
 const scnSources = document.getElementById('scnSources');
-const scnRegex = document.getElementById('scnRegex');
-const scnFeedUrl = document.getElementById('scnFeedUrl');
 const scnNegative = document.getElementById('scnNegative');
 const scnPositive = document.getElementById('scnPositive');
 const scnDays = document.getElementById('scnDays');
@@ -831,8 +997,6 @@ function openScenarioModal(scenario) {
   scnProject.value = scenario ? scenario.projectId : (selectedProjectId || '');
   scnKeywords.value = scenario ? (scenario.keywords || []).join(', ') : '';
   scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
-  scnRegex.value = scenario ? (scenario.regex || '') : '';
-  scnFeedUrl.value = scenario ? (scenario.feedUrl || '') : '';
   scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
   scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
   scenarioModalOverlay.hidden = false;
@@ -843,16 +1007,9 @@ function closeScenarioModal() {
   editingScenarioId = null;
 }
 
-function scenariosForProject() {
-  const pid = selectedProjectId;
-  if (!pid) return currentScenarios;
-  return currentScenarios.filter((s) => String(s.projectId) === String(pid));
-}
-
 function renderScenariosPanel(container) {
-  const list = scenariosForProject();
-  if (!list.length) {
-    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">${selectedProjectId ? `Сценариев для этого проекта пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.` : 'Выберите проект, чтобы увидеть его сценарии поиска.'}<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>`;
+  if (!currentScenarios.length) {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
     const addBtn = container.querySelector('#addFirstScenarioBtn');
     if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
     return;
@@ -861,24 +1018,18 @@ function renderScenariosPanel(container) {
     '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
     '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
-    list.map((s) => `
-      <div class="scenario-row${s.archived ? ' is-archived' : ''}">
+    currentScenarios.map((s) => `
+      <div class="scenario-row">
         <div class="scenario-row-main">
-          <div class="scenario-name">${esc(s.name || 'Без названия')}${s.archived ? ' <span class="scenario-archived-tag">деактивирован</span>' : ''}</div>
+          <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
           <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.days ? ' · последние ' + s.days + ' дн.' : ''}</div>
           ${tagChips(s.keywords)}
           ${tagChips(s.negativeKeywords, 'neg')}
           ${tagChips(s.positiveKeywords, 'pos')}
           ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
-          ${s.regex ? `<div class="scenario-meta" style="margin-top:4px">🔎 ${esc(s.regex)}</div>` : ''}
-          ${s.feedUrl ? `<div class="scenario-meta" style="margin-top:4px">📡 ${esc(s.feedUrl)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
-          <button type="button" class="icon-btn" data-dup-scenario="${s.id}">Дублировать</button>
           <button type="button" class="icon-btn" data-edit-scenario="${s.id}">Изменить</button>
-          ${s.archived
-            ? `<button type="button" class="icon-btn" data-toggle-scenario="${s.id}">Активировать</button>`
-            : `<button type="button" class="icon-btn warn" data-toggle-scenario="${s.id}">Деактивировать</button>`}
           <button type="button" class="icon-btn warn" data-del-scenario="${s.id}">Удалить</button>
         </div>
       </div>`).join('');
@@ -914,62 +1065,10 @@ scenariosPanel.addEventListener('click', async (e) => {
   const close = e.target.closest('[data-close-scenarios]');
   const edit = e.target.closest('[data-edit-scenario]');
   const del = e.target.closest('[data-del-scenario]');
-  const dup = e.target.closest('[data-dup-scenario]');
-  const toggle = e.target.closest('[data-toggle-scenario]');
   if (close) { hideScenariosPanel(); return; }
   if (edit) {
     const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
     openScenarioModal(s);
-    return;
-  }
-  if (dup) {
-    try {
-      const s = currentScenarios.find((x) => String(x.id) === dup.dataset.dupScenario);
-      if (!s) return;
-      const body = {
-        projectId: s.projectId,
-        name: (s.name || 'Без названия') + ' (копия)',
-        keywords: s.keywords || [],
-        sources: s.sources || [],
-        negativeKeywords: s.negativeKeywords || [],
-        positiveKeywords: s.positiveKeywords || [],
-        regex: s.regex || '',
-        feedUrl: s.feedUrl || '',
-      };
-      await teamApi('/search-scenarios', { method: 'POST', body });
-      showToast('Сценарий продублирован.');
-      await loadScenarios();
-      renderScenariosPanel(scenariosPanel);
-    } catch (err) {
-      showToast(err.message);
-    }
-    return;
-  }
-  if (toggle) {
-    const s = currentScenarios.find((x) => String(x.id) === toggle.dataset.toggleScenario);
-    if (!s) return;
-    const nextArchived = !s.archived;
-    try {
-      await teamApi(`/search-scenarios/${toggle.dataset.toggleScenario}`, {
-        method: 'PUT',
-        body: {
-          projectId: s.projectId,
-          name: s.name || '',
-          keywords: s.keywords || [],
-          sources: s.sources || [],
-          negativeKeywords: s.negativeKeywords || [],
-          positiveKeywords: s.positiveKeywords || [],
-          regex: s.regex || '',
-          feedUrl: s.feedUrl || '',
-          archived: nextArchived,
-        },
-      });
-      showToast(nextArchived ? 'Сценарий деактивирован — автоматизация его больше не выполняет.' : 'Сценарий активирован.');
-      await loadScenarios();
-      renderScenariosPanel(scenariosPanel);
-    } catch (err) {
-      showToast(err.message);
-    }
     return;
   }
   if (del && confirm('Удалить сценарий? Останется ли у проекта его настройка — проверьте.')) {
@@ -998,8 +1097,6 @@ scnSave.addEventListener('click', async () => {
     sources: split(scnSources.value),
     negativeKeywords: split(scnNegative.value),
     positiveKeywords: split(scnPositive.value),
-    regex: scnRegex.value.trim(),
-    feedUrl: scnFeedUrl.value.trim(),
   };
   scnSave.disabled = true;
   try {

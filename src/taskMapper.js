@@ -83,6 +83,28 @@ function statusOptions(board) {
   return (prop && prop.options || []).map((o) => ({ id: o.id, label: o.value }));
 }
 
+// "Ответственный" can be set up on the board either as a select property
+// (fixed list of options, like status/project) or as a Focalboard "person"
+// property (raw value is a Mattermost user id, no options list). Handle
+// both: if the property has its own options, those are the only valid
+// values (write via optionIdByLabel); otherwise fall back to the live
+// Mattermost team member list so there's still something to pick from.
+function assigneeLabel(assigneeProp, rawValue, membersById) {
+  if (!rawValue) return null;
+  const byOption = optionLabelById(assigneeProp, rawValue);
+  if (byOption) return byOption;
+  const member = membersById && membersById.get(rawValue);
+  return member ? member.label : null;
+}
+
+function assigneeOptions(board, members) {
+  const prop = findPropertyDef(board, config.assigneePropertyName);
+  if (prop && (prop.options || []).length) {
+    return { kind: 'select', options: prop.options.map((o) => ({ id: o.id, label: o.value })) };
+  }
+  return { kind: 'person', options: (members || []).map((m) => ({ id: m.id, label: m.label })) };
+}
+
 // board: getBoard -> single board object with cardProperties.
 // cards: listCards -> card[] with properties keyed by property id.
 // opts.project: option id or label to narrow to one client (REQUIRED for the
@@ -99,6 +121,8 @@ function buildTasks(board, cards, opts = {}) {
   const uvmProp = findPropertyDef(board, config.uvmPropertyName);
   const typeProp = findPropertyDef(board, config.typePropertyName);
   const priorityProp = findPropertyDef(board, config.priorityPropertyName);
+  const assigneeProp = findPropertyDef(board, config.assigneePropertyName);
+  const membersById = new Map((opts.members || []).map((m) => [m.id, m]));
 
   const projectOptionId = projectProp ? resolveProjectOptionId(projectProp, opts.project) : null;
   const projectFilterMatched = !projectProp || !!projectOptionId;
@@ -121,6 +145,7 @@ function buildTasks(board, cards, opts = {}) {
     const rawUvm = uvmProp ? properties[uvmProp.id] : null;
     const rawType = typeProp ? properties[typeProp.id] : null;
     const rawPriority = priorityProp ? properties[priorityProp.id] : null;
+    const rawAssignee = assigneeProp ? properties[assigneeProp.id] : null;
 
     const deadline = parsePropertyDate(rawDeadline);
     const pubUrl = rawUrl ? String(rawUrl).trim() : '';
@@ -137,6 +162,7 @@ function buildTasks(board, cards, opts = {}) {
         id: statusId,
         label: optionLabelById(statusProp, statusId),
       },
+      assignee: rawAssignee ? { id: rawAssignee, label: assigneeLabel(assigneeProp, rawAssignee, membersById) } : null,
       smi: rawSmi ? String(rawSmi).trim() : '',
       type: typeProp && rawType ? optionLabelById(typeProp, rawType) : null,
       priority: priorityProp && rawPriority ? optionLabelById(priorityProp, rawPriority) : null,
@@ -172,6 +198,7 @@ function buildTasks(board, cards, opts = {}) {
       projectFilterMatched,
       projects: projectOptions(board),
       statuses: statusOptions(board),
+      assignee: assigneeOptions(board, opts.members),
     },
   };
 }
@@ -182,13 +209,59 @@ function deadlineLabel(dateStr) {
   return `${d.getUTCDate()} ${MONTHS_RU[d.getUTCMonth()]}`;
 }
 
+// Full single-task view for the edit modal: the same fields as buildTasks()
+// plus the free-text "text" content block and the comment thread, both
+// stored as child blocks of the card (parentId === card.id) rather than as
+// board properties. `blocks` is the full board block list (mattermostClient
+// listBlocks); `members` is the team member list for resolving comment
+// authors and (when the assignee property has no options of its own) the
+// assignee's display name.
+function buildTaskDetail(board, card, blocks, members) {
+  const single = buildTasks(board, [card], { members }).tasks[0];
+  if (!single) return null;
+
+  const childBlocks = (blocks || []).filter((b) => b.parentId === card.id && !b.deleteAt);
+  const textBlock = childBlocks.find((b) => b.type === 'text');
+  const comments = childBlocks
+    .filter((b) => b.type === 'comment')
+    .map((b) => {
+      const author = (members || []).find((m) => m.id === b.createdBy);
+      return {
+        id: b.id,
+        authorId: b.createdBy || null,
+        author: author ? author.label : (b.createdBy ? 'Пользователь' : 'Автоматизация'),
+        text: b.title || '',
+        createdAt: b.createAt || 0,
+      };
+    })
+    .sort((a, b) => a.createdAt - b.createdAt);
+  const attachments = childBlocks
+    .filter((b) => b.type === 'image' || b.type === 'attachment')
+    .map((b) => ({
+      id: b.id,
+      type: b.type,
+      title: b.title || '',
+      fileId: (b.fields && b.fields.fileId) || null,
+      createdAt: b.createAt || 0,
+    }));
+
+  return {
+    ...single,
+    text: textBlock ? textBlock.title || '' : '',
+    comments,
+    attachments,
+  };
+}
+
 module.exports = {
   buildTasks,
+  buildTaskDetail,
   findPropertyDef,
   optionIdByLabel,
   optionLabelById,
   projectOptions,
   statusOptions,
+  assigneeOptions,
   parseUvm,
   displayReach,
 };

@@ -136,6 +136,80 @@
       </section>
     </div>
 
+    <!-- Модалка карточки задачи (полное редактирование) -->
+    <div class="modal-overlay" id="taskModalOverlay" hidden>
+      <div class="modal-card wide task-modal">
+        <div class="task-modal-head">
+          <textarea class="task-title-input" id="taskTitle" rows="1" placeholder="Название задачи"></textarea>
+          <button type="button" class="icon-btn" id="taskModalClose" title="Закрыть" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="task-modal-scroll">
+          <div class="loading" id="taskModalLoading">Загружаем карточку…</div>
+          <div class="task-modal-body" id="taskModalBody" hidden>
+            <div class="task-field-grid">
+              <div>
+                <div class="field-label">📌 Статус</div>
+                <select class="field-input" id="taskStatus"></select>
+              </div>
+              <div>
+                <div class="field-label">🗂 Проект</div>
+                <select class="field-input" id="taskProject"></select>
+              </div>
+              <div>
+                <div class="field-label">👤 Ответственный</div>
+                <select class="field-input" id="taskAssignee"><option value="">—</option></select>
+              </div>
+              <div>
+                <div class="field-label">📰 СМИ / ресурс</div>
+                <input class="field-input" id="taskSmi" type="text" placeholder="Например, Известия">
+              </div>
+              <div>
+                <div class="field-label">🗓 Дата публикации</div>
+                <input class="field-input" id="taskDeadline" type="date">
+              </div>
+              <div>
+                <div class="field-label">📊 UVM (охват)</div>
+                <input class="field-input" id="taskUvm" type="text" inputmode="numeric" placeholder="Например, 19400">
+              </div>
+            </div>
+
+            <div class="task-field-full">
+              <div class="field-label">🔗 Ссылка на публикацию</div>
+              <input class="field-input" id="taskUrl" type="text" placeholder="https://…">
+            </div>
+
+            <div class="task-field-full">
+              <div class="field-label">📝 Текст</div>
+              <textarea class="field-input" id="taskText" rows="5" placeholder="Текст поста / публикации…"></textarea>
+            </div>
+
+            <div class="task-field-full">
+              <div class="field-label">📎 Медиа</div>
+              <div class="task-attachments" id="taskAttachments"></div>
+              <label class="task-upload-zone" id="taskUploadZone">
+                <input type="file" id="taskFileInput" hidden accept="image/*,application/pdf">
+                <span>+ Прикрепить файл</span>
+                <span class="task-upload-hint">до 8 МБ</span>
+              </label>
+            </div>
+
+            <div class="task-chat">
+              <div class="field-label">💬 Обсуждение</div>
+              <div class="task-chat-list" id="taskCommentList"></div>
+              <div class="task-chat-input-row">
+                <input class="field-input" id="taskCommentInput" type="text" placeholder="Написать комментарий…">
+                <button type="button" class="btn approve small" id="taskCommentSend">Отправить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" id="taskModalCancel">Отмена</button>
+          <button type="button" class="btn approve" id="taskModalSave">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Модалка добавления/редактирования упоминания -->
     <div class="modal-overlay" id="mentionModalOverlay" hidden>
       <div class="modal-card">
@@ -148,13 +222,6 @@
           <div>
             <div class="field-label">Дата</div>
             <input class="field-input" id="mentionDate" type="date">
-          </div>
-          <div>
-            <div class="field-label">Тип события</div>
-            <select class="field-input" id="mentionEventType">
-              <option value="news" selected>Новость</option>
-              <option value="article">Статья / публикация</option>
-            </select>
           </div>
           <div>
             <div class="field-label">Тональность</div>
@@ -191,14 +258,7 @@
         <div class="field-label">Ключевые слова (через запятую)</div>
         <input class="field-input" id="scnKeywords" type="text" placeholder="бренд, имя директора, продукт…">
         <div class="field-label">Ссылки / источники (через запятую)</div>
-        <input class="field-input" id="scnSources" type="text" placeholder="site:kommersant.ru, interfax.ru…">
-        <div class="hint" style="margin:2px 0 0">Где искать: домены или площадки. Пример: <span class="mono">site:kommersant.ru, interfax.ru, rbc.ru</span> — ограничит поиск этими доменами.</div>
-        <div class="field-label">Регулярное выражение (необязательно)</div>
-        <input class="field-input" id="scnRegex" type="text" placeholder="Пример: (?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)">
-        <div class="hint" style="margin:2px 0 0">Применяется к заголовку и описанию уже найденных результатов — оставляет только совпадения. Если пусто — берутся все найденные.</div>
-        <div class="field-label">URL поиска / источника (необязательно)</div>
-        <input class="field-input" id="scnFeedUrl" type="text" placeholder="https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&within=1, https://site.ru/feed…">
-        <div class="hint" style="margin:2px 0 0">URL передаётся автоматизации как есть (ежесуточно). Годится Яндекс, Google, RSS/API-лента — например <span class="mono">https://yandex.ru/search/?text=…&within=1</span>. Поисковая строка тогда не используется.</div>
+        <input class="field-input" id="scnSources" type="text" placeholder="site:site.ru, конкретный URL…">
         <div class="modal-row">
           <div>
             <div class="field-label">Слова-негатив</div>

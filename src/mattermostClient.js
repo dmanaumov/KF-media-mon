@@ -221,6 +221,91 @@ async function getUserIdByUsername(username) {
   }
 }
 
+// --- Write operations (task card editing) ---
+
+// Patch a single block (card, or a card's child content/comment block).
+// `patch` is a Focalboard BlockPatch: { title?, updatedFields?, deletedFields? }.
+// IMPORTANT: updatedFields.properties REPLACES the whole properties map on the
+// server (it's a plain field assignment, not a per-key merge) — callers must
+// pass the full merged properties object, never a partial one, or sibling
+// property values will be wiped.
+async function patchBlock(boardId, blockId, patch) {
+  const res = await mmFetch(
+    boardsUrl(`/boards/${boardId}/blocks/${blockId}`),
+    { method: 'PATCH', body: JSON.stringify(patch) },
+    `patchBlock(${boardId},${blockId})`
+  );
+  return asJsonOrThrow(res, `patchBlock(${boardId},${blockId})`);
+}
+
+// Insert one or more new blocks (comments, content blocks, attachments).
+// Each block should include type/parentId/boardId/title/fields/createAt/
+// updateAt/deleteAt — id can be left '' (server generates a real one) and
+// createdBy is set server-side from the authenticated session.
+async function insertBlocks(boardId, blocks) {
+  const res = await mmFetch(
+    boardsUrl(`/boards/${boardId}/blocks`),
+    { method: 'POST', body: JSON.stringify(blocks) },
+    `insertBlocks(${boardId})`
+  );
+  return asJsonOrThrow(res, `insertBlocks(${boardId})`);
+}
+
+// Team members, for the "Ответственный" (assignee) picker and for resolving
+// comment/card createdBy ids to display names. Uses the core Mattermost API
+// (not the boards/focalboard prefix).
+async function listTeamMembers(teamId) {
+  const headers = await authHeaders();
+  delete headers['Content-Type'];
+  const res = await fetchWithTimeout(
+    `${config.mattermostUrl}/api/v4/users?in_team=${encodeURIComponent(teamId)}&per_page=200&active=true`,
+    { headers }
+  );
+  const users = await asJsonOrThrow(res, `listTeamMembers(${teamId})`);
+  return (Array.isArray(users) ? users : []).map((u) => ({
+    id: u.id,
+    username: u.username,
+    label: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username,
+  }));
+}
+
+// Upload a file to a board (attachment/media on a card). Uses the native
+// fetch/FormData/Blob globals available in Node 20+ (not the `fetch` name
+// bound above to node-fetch v2, which doesn't serialize multipart bodies
+// the same way) — referenced via globalThis so the import above can't shadow them.
+async function uploadFile(teamId, boardId, buffer, filename, mimeType) {
+  assertConfigured();
+  const token = await getBearerToken();
+  const form = new globalThis.FormData();
+  form.append('file', new globalThis.Blob([buffer], { type: mimeType || 'application/octet-stream' }), filename);
+  const res = await globalThis.fetch(boardsUrl(`/teams/${teamId}/${boardId}/files`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'X-Requested-With': 'XMLHttpRequest' },
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`[mattermost] uploadFile failed: HTTP ${res.status} ${text.slice(0, 300)}`);
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch (e) { /* ignore */ }
+  const fileId = parsed && (parsed.fileId || parsed.file_id);
+  if (!fileId) throw new Error('[mattermost] uploadFile: no fileId in response');
+  return fileId;
+}
+
+// Streams a previously-uploaded file back (attachment/media display). Per
+// Focalboard's GET /files/teams/{teamID}/{boardID}/{filename} route, the
+// path segment is documented as "filename" but in practice is looked up by
+// the generated fileId returned from uploadFile — unverified against this
+// specific server, so a wrong id here surfaces as a 404 on one attachment,
+// not a data problem.
+async function getFile(teamId, boardId, fileId) {
+  const headers = await authHeaders();
+  delete headers['Content-Type'];
+  const res = await fetchWithTimeout(boardsUrl(`/files/teams/${teamId}/${boardId}/${fileId}`), { headers });
+  if (!res.ok) throw new Error(`[mattermost] getFile(${fileId}) failed: HTTP ${res.status}`);
+  return res;
+}
+
 module.exports = {
   listTeamBoards,
   getBoard,
@@ -228,4 +313,9 @@ module.exports = {
   listBlocks,
   loginAs,
   getUserIdByUsername,
+  patchBlock,
+  insertBlocks,
+  listTeamMembers,
+  uploadFile,
+  getFile,
 };

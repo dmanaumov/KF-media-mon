@@ -9,15 +9,19 @@ const db = require('./db');
 const teamAuth = require('./teamAuth');
 const projectSettings = require('./projectSettings');
 const mentions = require('./mentions');
-const { buildTasks, projectOptions, statusOptions } = require('./taskMapper');
+const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOptions, findPropertyDef } = require('./taskMapper');
 const scenarios = require('./scenarios');
 
 const app = express();
 app.use(compression());
-app.use(express.json());
+// Raised from the default 100kb: attachment uploads on a task card arrive as
+// base64 JSON (POST /api/team/tasks/:id/attachments), which runs ~33% larger
+// than the raw file — capped at 8MB raw in that route, so ~11MB encoded.
+app.use(express.json({ limit: '12mb' }));
 
 // --- Board loading with lazy TTL cache (matches SMM: in-memory only) ---
 const boardCache = new Map(); // boardId -> { expires, board, cards }
+let teamMembersCache = { expires: 0, members: [] };
 
 async function loadBoard(boardId, { fresh = false } = {}) {
   const cached = boardCache.get(boardId);
@@ -37,9 +41,27 @@ function invalidate() {
   boardCache.delete(config.mattermostBoardId);
 }
 
+// Team members change rarely — cache for a few minutes regardless of the
+// (much shorter) board TTL, so opening the assignee picker doesn't always
+// cost a round trip to Mattermost's core API.
+async function loadTeamMembers({ fresh = false } = {}) {
+  if (!fresh && teamMembersCache.expires > Date.now()) return teamMembersCache.members;
+  try {
+    const members = await mm.listTeamMembers(config.teamId);
+    teamMembersCache = { members, expires: Date.now() + 5 * 60 * 1000 };
+    return members;
+  } catch (err) {
+    console.error('[api] loadTeamMembers failed:', err.message);
+    return teamMembersCache.members; // stale-but-something beats a broken picker
+  }
+}
+
 async function loadTeamTasks(opts = {}) {
-  const { board, cards } = await loadBoard(config.mattermostBoardId, { fresh: !!opts.fresh });
-  return buildTasks(board, cards, opts);
+  const [{ board, cards }, members] = await Promise.all([
+    loadBoard(config.mattermostBoardId, { fresh: !!opts.fresh }),
+    loadTeamMembers(),
+  ]);
+  return buildTasks(board, cards, { ...opts, members });
 }
 
 async function settingsMapSafe() {
@@ -118,6 +140,151 @@ app.get('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('[api] /api/team/tasks failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+// --- Task card: full detail + edit (writes go straight to the Mattermost
+// board — this is the same card the whole team already works from, not a
+// local copy). Property writes always re-fetch the card fresh and merge
+// onto its CURRENT full properties object before patching: Focalboard's
+// PATCH replaces the whole `properties` field wholesale, so patching from a
+// stale or partial object would silently wipe sibling fields (status,
+// project, etc.) that nobody meant to touch. ---
+async function findCardFresh(cardId) {
+  const { board, cards } = await loadBoard(config.mattermostBoardId, { fresh: true });
+  const card = cards.find((c) => c.id === cardId && !c.deleteAt);
+  return { board, card };
+}
+
+app.get('/api/team/tasks/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const { board, card } = await findCardFresh(req.params.id);
+    if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    const [blocks, members] = await Promise.all([
+      mm.listBlocks(config.mattermostBoardId),
+      loadTeamMembers(),
+    ]);
+    const detail = buildTaskDetail(board, card, blocks, members);
+    res.json({
+      task: detail,
+      meta: {
+        statuses: statusOptions(board),
+        projects: projectOptions(board),
+        assignee: assigneeOptions(board, members),
+      },
+    });
+  } catch (err) {
+    console.error('[api] GET /api/team/tasks/:id failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+app.patch('/api/team/tasks/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const { board, card } = await findCardFresh(req.params.id);
+    if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    const body = req.body || {};
+
+    const projectProp = findPropertyDef(board, config.projectPropertyName);
+    const statusProp = findPropertyDef(board, config.statusPropertyName);
+    const deadlineProp = findPropertyDef(board, config.datePropertyName);
+    const smiProp = findPropertyDef(board, config.smiPropertyName);
+    const urlProp = findPropertyDef(board, config.urlPropertyName);
+    const uvmProp = findPropertyDef(board, config.uvmPropertyName);
+    const assigneeProp = findPropertyDef(board, config.assigneePropertyName);
+
+    const newProps = { ...(card.properties || {}) };
+    if (projectProp && body.projectId !== undefined) newProps[projectProp.id] = body.projectId || '';
+    if (statusProp && body.statusId !== undefined) newProps[statusProp.id] = body.statusId || '';
+    if (smiProp && body.smi !== undefined) newProps[smiProp.id] = String(body.smi || '');
+    if (urlProp && body.url !== undefined) newProps[urlProp.id] = String(body.url || '');
+    if (uvmProp && body.uvm !== undefined) newProps[uvmProp.id] = body.uvm === null || body.uvm === '' ? '' : String(body.uvm);
+    if (assigneeProp && body.assigneeId !== undefined) newProps[assigneeProp.id] = body.assigneeId || '';
+    if (deadlineProp && body.deadline !== undefined) {
+      newProps[deadlineProp.id] = body.deadline ? JSON.stringify({ from: Date.parse(`${body.deadline}T00:00:00Z`) }) : '';
+    }
+
+    const patch = { updatedFields: { properties: newProps } };
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (title) patch.title = title;
+    await mm.patchBlock(config.mattermostBoardId, card.id, patch);
+
+    if (body.text !== undefined) {
+      const blocks = await mm.listBlocks(config.mattermostBoardId);
+      const existing = blocks.find((b) => b.parentId === card.id && b.type === 'text' && !b.deleteAt);
+      const text = String(body.text || '');
+      if (existing) {
+        await mm.patchBlock(config.mattermostBoardId, existing.id, { title: text });
+      } else if (text.trim()) {
+        await mm.insertBlocks(config.mattermostBoardId, [{
+          id: '', boardId: config.mattermostBoardId, parentId: card.id, type: 'text',
+          title: text, fields: {}, createAt: Date.now(), updateAt: Date.now(), deleteAt: 0,
+        }]);
+      }
+    }
+
+    invalidate();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] PATCH /api/team/tasks/:id failed:', err.message);
+    res.status(502).json({ error: 'mattermost_write_failed', message: err.message });
+  }
+});
+
+app.post('/api/team/tasks/:id/comments', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!text) return res.status(400).json({ error: 'empty_comment', message: 'Пустой комментарий.' });
+    const { card } = await findCardFresh(req.params.id);
+    if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    await mm.insertBlocks(config.mattermostBoardId, [{
+      id: '', boardId: config.mattermostBoardId, parentId: card.id, type: 'comment',
+      title: text, fields: {}, createAt: Date.now(), updateAt: Date.now(), deleteAt: 0,
+    }]);
+    invalidate();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] POST /api/team/tasks/:id/comments failed:', err.message);
+    res.status(502).json({ error: 'mattermost_write_failed', message: err.message });
+  }
+});
+
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+app.post('/api/team/tasks/:id/attachments', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const { filename, mimeType, dataBase64 } = req.body || {};
+    if (!filename || !dataBase64) return res.status(400).json({ error: 'missing_file', message: 'Файл не передан.' });
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > MAX_ATTACHMENT_BYTES) {
+      return res.status(400).json({ error: 'file_too_large', message: 'Файл больше 8 МБ.' });
+    }
+    const { card } = await findCardFresh(req.params.id);
+    if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    const fileId = await mm.uploadFile(config.teamId, config.mattermostBoardId, buffer, filename, mimeType);
+    const isImage = /^image\//.test(mimeType || '');
+    await mm.insertBlocks(config.mattermostBoardId, [{
+      id: '', boardId: config.mattermostBoardId, parentId: card.id,
+      type: isImage ? 'image' : 'attachment',
+      title: filename,
+      fields: { fileId },
+      createAt: Date.now(), updateAt: Date.now(), deleteAt: 0,
+    }]);
+    invalidate();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] POST /api/team/tasks/:id/attachments failed:', err.message);
+    res.status(502).json({ error: 'mattermost_write_failed', message: err.message });
+  }
+});
+
+app.get('/api/team/tasks/:id/attachments/:fileId', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const mmRes = await mm.getFile(config.teamId, config.mattermostBoardId, req.params.fileId);
+    res.setHeader('Content-Type', mmRes.headers.get('content-type') || 'application/octet-stream');
+    mmRes.body.pipe(res);
+  } catch (err) {
+    console.error('[api] GET /api/team/tasks/:id/attachments/:fileId failed:', err.message);
     res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
   }
 });
