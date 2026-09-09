@@ -1192,6 +1192,7 @@ scnSave.addEventListener('click', async () => {
 const searchLogsBtn = document.getElementById('searchLogsBtn');
 const searchLogsModalOverlay = document.getElementById('searchLogsModalOverlay');
 const searchLogsCloseBtn = document.getElementById('searchLogsCloseBtn');
+const searchLogsCopyBtn = document.getElementById('searchLogsCopyBtn');
 const searchLogList = document.getElementById('searchLogList');
 const searchLogsEmpty = document.getElementById('searchLogsEmpty');
 const searchLogsLoading = document.getElementById('searchLogsLoading');
@@ -1211,9 +1212,7 @@ async function fetchSearchLogs() {
 }
 
 function renderSearchLogs() {
-  const list = searchLogSeverity === 'all'
-    ? currentSearchLogs
-    : currentSearchLogs.filter((l) => l.severity === searchLogSeverity);
+  const list = visibleSearchLogs();
   searchLogsEmpty.hidden = currentSearchLogs.length > 0;
   searchLogsEmpty.textContent = currentSearchLogs.length
     ? 'Нет записей с такой критичностью.'
@@ -1233,6 +1232,28 @@ function logTimeLabel(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function visibleSearchLogs() {
+  return (searchLogSeverity === 'all'
+    ? currentSearchLogs.slice()
+    : currentSearchLogs.filter((l) => l.severity === searchLogSeverity))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+async function copySearchLogs() {
+  const list = visibleSearchLogs();
+  if (!list.length) { showToast('Копировать нечего — нет логов.'); return; }
+  const text = list.map((l) => {
+    const head = `${logTimeLabel(l.createdAt)} — ${l.scenarioName}: ${LOG_STATUS_LABEL[l.status] || l.status} · ${SEVERITY_LABEL[l.severity] || l.severity}`;
+    return l.note ? `${head}\n${l.note}` : head;
+  }).join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(`Скопировано записей: ${list.length}.`);
+  } catch (err) {
+    showToast('Не удалось скопировать: ' + err.message);
+  }
 }
 
 async function openSearchLogs() {
@@ -1256,6 +1277,7 @@ function closeSearchLogs() {
 
 searchLogsBtn.addEventListener('click', openSearchLogs);
 searchLogsCloseBtn.addEventListener('click', closeSearchLogs);
+searchLogsCopyBtn.addEventListener('click', copySearchLogs);
 searchLogsModalOverlay.addEventListener('click', (e) => { if (e.target === searchLogsModalOverlay) closeSearchLogs(); });
 
 logSeverityFilter.addEventListener('click', (e) => {
