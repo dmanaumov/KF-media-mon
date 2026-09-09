@@ -1217,15 +1217,18 @@ function renderSearchLogs() {
   searchLogsEmpty.textContent = currentSearchLogs.length
     ? 'Нет записей с такой критичностью.'
     : 'Логов пока нет. Они появятся, когда автоматизация запустит сценарии.';
-  searchLogList.innerHTML = list.map((l) => `
+  searchLogList.innerHTML = list.map((l) => {
+    const projectBit = l.projectId ? ` · 📁 ${esc(projectLabelFor(l.projectId) || l.projectId)}` : '';
+    return `
     <div class="log-row">
       <div class="log-row-head">
         <b class="log-name">${esc(l.scenarioName)}</b>
         <span class="status ${SEVERITY_CLASS[l.severity] || 'gray'}">${SEVERITY_LABEL[l.severity] || l.severity}</span>
       </div>
-      <div class="log-meta">${LOG_STATUS_LABEL[l.status] || esc(l.status || '')} · ${logTimeLabel(l.createdAt)}${l.createdBy ? ' · ' + esc(l.createdBy) : ''}</div>
+      <div class="log-meta">${LOG_STATUS_LABEL[l.status] || esc(l.status || '')} · ${logTimeLabel(l.createdAt)}${projectBit}${l.createdBy ? ' · ' + esc(l.createdBy) : ''}</div>
       ${l.note ? `<div class="log-note">${esc(l.note)}</div>` : ''}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function logTimeLabel(ts) {

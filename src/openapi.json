@@ -612,9 +612,18 @@
         "properties": {
           "scenarioId": { "type": "integer", "description": "ID сценария (если известен)" },
           "scenarioName": { "type": "string", "description": "Название фильтра" },
+          "projectId": { "type": "string", "description": "ID проекта, к которому относится запуск (обязательно, если scenarioId не передан)" },
           "status": { "type": "string", "default": "ok", "description": "Результат запуска: ok | error | partial | …" },
           "note": { "type": "string", "description": "Примечания" },
           "severity": { "type": "string", "enum": ["info", "debug", "important"], "default": "info", "description": "Критичность" }
+        },
+        "example": {
+          "scenarioId": 1,
+          "scenarioName": "ФЛГ — мониторинг",
+          "projectId": "project-42",
+          "status": "ok",
+          "note": "найдено 4 публикации",
+          "severity": "info"
         }
       },
       "SearchLogsResponse": { "type": "object", "properties": { "ok": { "type": "boolean" }, "inserted": { "type": "integer" } } },
