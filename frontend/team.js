@@ -233,7 +233,10 @@ teamProjectSelect.addEventListener('change', async () => {
   try { localStorage.setItem(PROJECT_KEY, selectedProjectId); } catch (e) {}
   await fetchMentionsForProject();
   if (activeTab === 'tasks') loadTasks();
-  else if (activeTab === 'web') renderMentions();
+  else if (activeTab === 'web') {
+    renderMentions();
+    if (!scenariosPanel.hidden) renderScenariosPanel(scenariosPanel);
+  }
   else if (activeTab === 'stats') loadStatsTab();
 });
 
@@ -709,6 +712,7 @@ function updateWebBadge() {
 
 const SENTIMENT_LABEL = { positive: 'Позитив', neutral: 'Нейтрально', negative: 'Негатив' };
 const SENTIMENT_CLASS = { positive: 'published', neutral: 'gray', negative: 'rejected' };
+const EVENT_TYPE_LABEL = { article: 'Статья / публикация', news: 'Новость' };
 
 function mentionCardHtml(m) {
   const isAlert = m.sentiment === 'negative' || m.urgent;
@@ -747,7 +751,14 @@ function renderMentions() {
     return;
   }
   webEmpty.hidden = true;
-  webList.innerHTML = currentMentions.map(mentionCardHtml).join('');
+  webList.innerHTML = currentMentions.map((m) => {
+    try {
+      return mentionCardHtml(m);
+    } catch (err) {
+      console.error('[web] card render failed:', err);
+      return '';
+    }
+  }).join('');
 }
 
 async function loadWebTab() {
@@ -1009,8 +1020,13 @@ function closeScenarioModal() {
 }
 
 function renderScenariosPanel(container) {
-  if (!currentScenarios.length) {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
+  const list = selectedProjectId
+    ? currentScenarios.filter((s) => s.projectId === selectedProjectId)
+    : currentScenarios;
+  if (!list.length) {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div class="scenarios-title">Сценарии поиска</div><button type="button" class="icon-btn" data-close-scenarios>×</button></div><div class="scenarios-empty">' +
+      (currentScenarios.length ? 'Пока нет сценариев поиска для этого проекта.' : 'Сценариев пока нет. Создайте первый — и он будет выполняться автоматически раз в сутки.') +
+      '<br><br><button type="button" class="btn approve small" id="addFirstScenarioBtn">+ Создать сценарий</button></div>';
     const addBtn = container.querySelector('#addFirstScenarioBtn');
     if (addBtn) addBtn.addEventListener('click', () => openScenarioModal(null));
     return;
@@ -1019,7 +1035,7 @@ function renderScenariosPanel(container) {
     '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
     '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
-    currentScenarios.map((s) => `
+    list.map((s) => `
       <div class="scenario-row${s.archived ? ' is-archived' : ''}">
         <div class="scenario-row-main">
           <div class="scenario-name">${esc(s.name || 'Без названия')}${s.archived ? '<span class="badge-archived">деактивирован</span>' : ''}</div>
