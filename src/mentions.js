@@ -22,6 +22,7 @@ function rowToMention(r) {
     id: r.id,
     url: r.url || '',
     source: r.source || '',
+    title: r.title || '',
     publishedAt: r.published_at ? new Date(r.published_at).toISOString().slice(0, 10) : '',
     sentiment: r.sentiment || 'neutral',
     urgent: !!r.urgent,

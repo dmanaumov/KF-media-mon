@@ -60,6 +60,9 @@ button{cursor:pointer}
 .status.urgent-badge{background:var(--urgent);color:#fff}
 .post-link{margin-top:10px}
 .post-link a{color:var(--accent);font-weight:800;font-size:13px;text-decoration:none;border-bottom:1px solid currentColor;word-break:break-all}
+.mention-link{margin-top:8px;font-size:12px;line-height:1.4}
+.mention-link a{color:var(--muted);text-decoration:none;border-bottom:1px solid rgba(112,122,120,.45);word-break:break-all}
+.mention-link a:hover{color:var(--accent);border-bottom-color:currentColor}
 .reach{margin-top:10px;font-size:12.5px;font-weight:750;color:var(--ink)}
 .reach b{color:var(--accent)}
 .empty{background:#fff;border:1px dashed #C7CECD;border-radius:22px;padding:50px 22px;text-align:center;color:var(--muted)}
@@ -200,6 +203,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .scenarios-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
 .scenarios-title{font-weight:850;font-size:14px}
 .scenario-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.scenario-row.is-archived{opacity:.55}
+.scenario-row.is-archived .scenario-name{text-decoration:line-through}
 .scenario-row-main{flex:1;min-width:0}
 .scenario-name{font-weight:850;font-size:13.5px}
 .scenario-meta{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5;word-break:break-word}

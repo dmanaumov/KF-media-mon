@@ -713,9 +713,9 @@ const SENTIMENT_CLASS = { positive: 'published', neutral: 'gray', negative: 'rej
 function mentionCardHtml(m) {
   const isAlert = m.sentiment === 'negative' || m.urgent;
   const icons = [m.urgent ? '🚨' : '', m.sentiment === 'negative' ? '🔥' : ''].filter(Boolean).join(' ');
-  const heading = m.source || m.url || 'Упоминание';
+  const heading = m.title || m.source || 'Упоминание';
   const metaBits = [
-    m.source ? `📰 ${esc(m.source)}` : '',
+    m.title && m.source ? `📰 ${esc(m.source)}` : '',
     m.publishedAt ? `🗓 ${deadlineLabel(m.publishedAt)}` : '',
     m.createdBy ? `👤 ${esc(m.createdBy)}` : '',
   ].filter(Boolean).join('  ·  ');
@@ -725,11 +725,12 @@ function mentionCardHtml(m) {
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
           <h2 class="${isAlert ? 'alert-title' : ''}">${icons ? icons + ' ' : ''}${esc(heading)}</h2>
-          ${m.url ? `<div class="post-link"><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.url)}</a></div>` : ''}
           ${m.comment ? `<div class="meta-sub">${esc(m.comment)}</div>` : ''}
+          ${m.url ? `<div class="mention-link"><a href="${esc(m.url)}" target="_blank" rel="noopener" title="${esc(m.url)}">${esc(m.url)}</a></div>` : ''}
         </div>
         <div class="badges">
           <span class="status ${SENTIMENT_CLASS[m.sentiment] || 'gray'}">${SENTIMENT_LABEL[m.sentiment] || 'Нейтрально'}</span>
+          <span class="status gray">${EVENT_TYPE_LABEL[m.eventType] || 'Новость'}</span>
           ${m.urgent ? '<span class="status urgent-badge">🚨 Срочно</span>' : ''}
         </div>
       </div>
@@ -1019,9 +1020,9 @@ function renderScenariosPanel(container) {
     '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
     currentScenarios.map((s) => `
-      <div class="scenario-row">
+      <div class="scenario-row${s.archived ? ' is-archived' : ''}">
         <div class="scenario-row-main">
-          <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
+          <div class="scenario-name">${esc(s.name || 'Без названия')}${s.archived ? '<span class="badge-archived">деактивирован</span>' : ''}</div>
           <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.days ? ' · последние ' + s.days + ' дн.' : ''}</div>
           ${tagChips(s.keywords)}
           ${tagChips(s.negativeKeywords, 'neg')}
@@ -1030,6 +1031,7 @@ function renderScenariosPanel(container) {
         </div>
         <div style="display:flex;flex-direction:column;gap:6px">
           <button type="button" class="icon-btn" data-edit-scenario="${s.id}">Изменить</button>
+          <button type="button" class="icon-btn" data-toggle-scenario="${s.id}">${s.archived ? 'Активировать' : 'Деактивировать'}</button>
           <button type="button" class="icon-btn warn" data-del-scenario="${s.id}">Удалить</button>
         </div>
       </div>`).join('');
@@ -1064,11 +1066,39 @@ scenariosBtn.addEventListener('click', async () => {
 scenariosPanel.addEventListener('click', async (e) => {
   const close = e.target.closest('[data-close-scenarios]');
   const edit = e.target.closest('[data-edit-scenario]');
+  const toggle = e.target.closest('[data-toggle-scenario]');
   const del = e.target.closest('[data-del-scenario]');
   if (close) { hideScenariosPanel(); return; }
   if (edit) {
     const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
     openScenarioModal(s);
+    return;
+  }
+  if (toggle) {
+    const s = currentScenarios.find((x) => String(x.id) === toggle.dataset.toggleScenario);
+    if (!s) return;
+    if (!confirm(s.archived ? 'Активировать сценарий? Автоматический поиск снова будет выполняться.' : 'Деактивировать сценарий? Автоматический поиск перестанет выполняться.')) return;
+    try {
+      await teamApi(`/search-scenarios/${s.id}`, {
+        method: 'PUT',
+        body: {
+          name: s.name || '',
+          projectId: s.projectId || '',
+          keywords: s.keywords || [],
+          sources: s.sources || [],
+          negativeKeywords: s.negativeKeywords || [],
+          positiveKeywords: s.positiveKeywords || [],
+          regex: s.regex || '',
+          feedUrl: s.feedUrl || '',
+          archived: !s.archived,
+        },
+      });
+      showToast(s.archived ? 'Сценарий активирован.' : 'Сценарий деактивирован.');
+      await loadScenarios();
+      renderScenariosPanel(scenariosPanel);
+    } catch (err) {
+      showToast(err.message);
+    }
     return;
   }
   if (del && confirm('Удалить сценарий? Останется ли у проекта его настройка — проверьте.')) {
