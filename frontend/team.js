@@ -1045,10 +1045,11 @@ function renderScenariosPanel(container) {
           ${tagChips(s.positiveKeywords, 'pos')}
           ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <button type="button" class="icon-btn" data-edit-scenario="${s.id}">Изменить</button>
-          <button type="button" class="icon-btn" data-toggle-scenario="${s.id}">${s.archived ? 'Активировать' : 'Деактивировать'}</button>
-          <button type="button" class="icon-btn warn" data-del-scenario="${s.id}">Удалить</button>
+        <div class="scenario-actions">
+          <button type="button" class="scenario-act-btn" data-edit-scenario="${s.id}" title="Изменить">✏️</button>
+          <button type="button" class="scenario-act-btn" data-copy-scenario="${s.id}" title="Дублировать">⧉</button>
+          <button type="button" class="scenario-act-btn" data-toggle-scenario="${s.id}" title="${s.archived ? 'Активировать' : 'Деактивировать'}">${s.archived ? '▶️' : '⏸'}</button>
+          <button type="button" class="scenario-act-btn danger" data-del-scenario="${s.id}" title="Удалить">🗑️</button>
         </div>
       </div>`).join('');
   const addBtn = container.querySelector('#addScenarioBtn');
@@ -1082,12 +1083,38 @@ scenariosBtn.addEventListener('click', async () => {
 scenariosPanel.addEventListener('click', async (e) => {
   const close = e.target.closest('[data-close-scenarios]');
   const edit = e.target.closest('[data-edit-scenario]');
+  const copy = e.target.closest('[data-copy-scenario]');
   const toggle = e.target.closest('[data-toggle-scenario]');
   const del = e.target.closest('[data-del-scenario]');
   if (close) { hideScenariosPanel(); return; }
   if (edit) {
     const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
     openScenarioModal(s);
+    return;
+  }
+  if (copy) {
+    const s = currentScenarios.find((x) => String(x.id) === copy.dataset.copyScenario);
+    if (!s) return;
+    try {
+      await teamApi('/search-scenarios', {
+        method: 'POST',
+        body: {
+          projectId: s.projectId || '',
+          name: (s.name || '') + ' (копия)',
+          keywords: s.keywords || [],
+          sources: s.sources || [],
+          negativeKeywords: s.negativeKeywords || [],
+          positiveKeywords: s.positiveKeywords || [],
+          regex: s.regex || '',
+          feedUrl: s.feedUrl || '',
+        },
+      });
+      showToast('Сценарий продублирован.');
+      await loadScenarios();
+      renderScenariosPanel(scenariosPanel);
+    } catch (err) {
+      showToast(err.message);
+    }
     return;
   }
   if (toggle) {
