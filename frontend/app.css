@@ -42,6 +42,8 @@ button{cursor:pointer}
 .filter{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 13px;font-size:12px;font-weight:750;color:#687270;white-space:nowrap;transition:background .15s ease,color .15s ease,border-color .15s ease}
 .filter.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .filter-select{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:750;color:#687270;max-width:240px;transition:box-shadow .15s ease,border-color .15s ease}
+.mini-icon-btn{width:32px;height:32px;padding:0;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;line-height:1;display:grid;place-items:center;cursor:pointer;flex:0 0 auto;transition:background .15s ease,border-color .15s ease}
+.mini-icon-btn:hover{background:#F2F6F5;border-color:#C7CECD}
 .filter-select:focus,.project-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,70,67,.12)}
 .stack{display:grid;gap:16px;position:relative}
 .card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:0 8px 24px rgba(16,45,42,.035);padding:15px 17px}
@@ -348,6 +350,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .field-input{background:#262222;border-color:#3A4140;color:var(--ink)}
   .head-icon-link{background:#262222}
   .head-icon-link:hover{background:#202725}
+  .mini-icon-btn{background:#262222}
+  .mini-icon-btn:hover{background:#2C302E;border-color:#3A4140}
 
   .tab{color:var(--muted)}
   .tab-bar{background:#1B2320}

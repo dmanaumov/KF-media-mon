@@ -409,7 +409,8 @@
         "summary": "Логи поиска (попап «Логи поиска»)",
         "parameters": [
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 100 } },
-          { "name": "severity", "in": "query", "required": false, "schema": { "type": "string", "enum": ["info", "debug", "important"] }, "description": "Фильтр по критичности" }
+          { "name": "severity", "in": "query", "required": false, "schema": { "type": "string", "enum": ["info", "debug", "important"] }, "description": "Фильтр по критичности" },
+          { "name": "project", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Показывать логи только этого проекта" }
         ],
         "responses": {
           "200": {
@@ -580,6 +581,7 @@
           "status": { "type": "string", "description": "Результат запуска, напр.: ok, error, partial" },
           "note": { "type": "string", "description": "Примечания" },
           "severity": { "type": "string", "enum": ["info", "debug", "important"], "description": "Критичность" },
+          "projectId": { "type": "string", "description": "Проект сценария (если определён)" },
           "createdBy": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" }
         }

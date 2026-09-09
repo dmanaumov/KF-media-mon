@@ -623,6 +623,7 @@ app.get('/api/team/search-logs', teamAuth.requireTeamAuth, async (req, res) => {
     const logs = await searchLogs.listLogs(config.mattermostBoardId, {
       limit: req.query.limit,
       severity: String(req.query.severity || ''),
+      project: String(req.query.project || ''),
     });
     res.json({ logs });
   } catch (err) {

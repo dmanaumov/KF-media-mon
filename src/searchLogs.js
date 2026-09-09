@@ -18,6 +18,7 @@ function rowToLog(r) {
     status: r.status || 'ok',
     note: r.note || '',
     severity: normSeverity(r.severity),
+    projectId: r.project_id || '',
     createdBy: r.created_by || '',
     createdAt: r.created_at,
   };
@@ -35,16 +36,28 @@ async function insertLogs(boardId, provider, items) {
     if (!raw) continue;
     const name = String(raw.scenarioName || '').trim().slice(0, 300);
     if (!name) continue;
+
+    const scenarioId = raw.scenarioId != null ? Number(raw.scenarioId) || null : null;
+    let projectId = raw.projectId != null ? String(raw.projectId).trim().slice(0, 100) : '';
+    if (!projectId && scenarioId) {
+      const sc = await pool.query(
+        'SELECT project_id FROM search_scenarios WHERE id = $1 AND board_id = $2',
+        [scenarioId, boardId]
+      );
+      if (sc.rows[0]) projectId = String(sc.rows[0].project_id || '').slice(0, 100);
+    }
+
     const { rows } = await pool.query(
-      `INSERT INTO search_logs (board_id, scenario_id, scenario_name, status, note, severity, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      `INSERT INTO search_logs (board_id, scenario_id, scenario_name, status, note, severity, project_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [
         boardId,
-        raw.scenarioId != null ? Number(raw.scenarioId) || null : null,
+        scenarioId,
         name,
         String(raw.status || '').trim().slice(0, 50) || 'ok',
         String(raw.note || '').trim().slice(0, 1000),
         normSeverity(raw.severity),
+        projectId,
         createdBy,
       ]
     );
@@ -53,17 +66,21 @@ async function insertLogs(boardId, provider, items) {
   return { inserted };
 }
 
-async function listLogs(boardId, { limit = 100, severity = '' } = {}) {
+async function listLogs(boardId, { limit = 100, severity = '', project = '' } = {}) {
   const pool = db.requirePool();
+  const clauses = ['board_id = $1'];
   const params = [boardId];
-  let where = 'board_id = $1';
   if (severity && SEVERITIES.includes(severity)) {
     params.push(severity);
-    where += ` AND severity = $${params.length}`;
+    clauses.push(`severity = $${params.length}`);
+  }
+  if (project) {
+    params.push(project);
+    clauses.push(`project_id = $${params.length}`);
   }
   params.push(Math.max(1, Math.min(Number(limit) || 100, 500)));
   const { rows } = await pool.query(
-    `SELECT * FROM search_logs WHERE ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
+    `SELECT * FROM search_logs WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,
     params
   );
   return rows.map(rowToLog);

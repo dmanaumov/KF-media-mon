@@ -136,6 +136,8 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_board_idx ON search_logs (board_id, created_at);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_scenario_idx ON search_logs (scenario_id);`);
+  await pool.query(`ALTER TABLE search_logs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT '';`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_project_idx ON search_logs (board_id, project_id, created_at);`);
 }
 
 module.exports = { pool, requirePool, initSchema };

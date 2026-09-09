@@ -1205,7 +1205,8 @@ const SEVERITY_CLASS = { info: 'gray', debug: 'ongoing', important: 'rejected' }
 const LOG_STATUS_LABEL = { ok: '✓ Успешно', error: '✗ Ошибка', partial: '~ Частично', skipped: '∅ Пропущено' };
 
 async function fetchSearchLogs() {
-  const data = await teamApi('/search-logs?limit=200');
+  const qs = selectedProjectId ? `?project=${encodeURIComponent(selectedProjectId)}` : '?limit=200';
+  const data = await teamApi(`/search-logs${qs}`);
   currentSearchLogs = data.logs || [];
 }
 
