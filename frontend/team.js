@@ -1187,6 +1187,84 @@ scnSave.addEventListener('click', async () => {
   }
 });
 
+// ==================== Логи поиска (история запусков автоматизации) ====================
+
+const searchLogsBtn = document.getElementById('searchLogsBtn');
+const searchLogsModalOverlay = document.getElementById('searchLogsModalOverlay');
+const searchLogsCloseBtn = document.getElementById('searchLogsCloseBtn');
+const searchLogList = document.getElementById('searchLogList');
+const searchLogsEmpty = document.getElementById('searchLogsEmpty');
+const searchLogsLoading = document.getElementById('searchLogsLoading');
+const logSeverityFilter = document.getElementById('logSeverityFilter');
+
+let currentSearchLogs = [];
+let searchLogSeverity = 'all';
+
+const SEVERITY_LABEL = { info: 'Инфо', debug: 'Отладка', important: 'Важно' };
+const SEVERITY_CLASS = { info: 'gray', debug: 'ongoing', important: 'rejected' };
+const LOG_STATUS_LABEL = { ok: '✓ Успешно', error: '✗ Ошибка', partial: '~ Частично', skipped: '∅ Пропущено' };
+
+async function fetchSearchLogs() {
+  const data = await teamApi('/search-logs?limit=200');
+  currentSearchLogs = data.logs || [];
+}
+
+function renderSearchLogs() {
+  const list = searchLogSeverity === 'all'
+    ? currentSearchLogs
+    : currentSearchLogs.filter((l) => l.severity === searchLogSeverity);
+  searchLogsEmpty.hidden = currentSearchLogs.length > 0;
+  searchLogsEmpty.textContent = currentSearchLogs.length
+    ? 'Нет записей с такой критичностью.'
+    : 'Логов пока нет. Они появятся, когда автоматизация запустит сценарии.';
+  searchLogList.innerHTML = list.map((l) => `
+    <div class="log-row">
+      <div class="log-row-head">
+        <b class="log-name">${esc(l.scenarioName)}</b>
+        <span class="status ${SEVERITY_CLASS[l.severity] || 'gray'}">${SEVERITY_LABEL[l.severity] || l.severity}</span>
+      </div>
+      <div class="log-meta">${LOG_STATUS_LABEL[l.status] || esc(l.status || '')} · ${logTimeLabel(l.createdAt)}${l.createdBy ? ' · ' + esc(l.createdBy) : ''}</div>
+      ${l.note ? `<div class="log-note">${esc(l.note)}</div>` : ''}
+    </div>`).join('');
+}
+
+function logTimeLabel(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+async function openSearchLogs() {
+  searchLogsModalOverlay.hidden = false;
+  searchLogsLoading.hidden = false;
+  searchLogsEmpty.hidden = true;
+  searchLogList.innerHTML = '';
+  try {
+    await fetchSearchLogs();
+  } catch (err) {
+    currentSearchLogs = [];
+    showToast('Не удалось загрузить логи: ' + err.message);
+  }
+  searchLogsLoading.hidden = true;
+  renderSearchLogs();
+}
+
+function closeSearchLogs() {
+  searchLogsModalOverlay.hidden = true;
+}
+
+searchLogsBtn.addEventListener('click', openSearchLogs);
+searchLogsCloseBtn.addEventListener('click', closeSearchLogs);
+searchLogsModalOverlay.addEventListener('click', (e) => { if (e.target === searchLogsModalOverlay) closeSearchLogs(); });
+
+logSeverityFilter.addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-sev]');
+  if (!chip) return;
+  searchLogSeverity = chip.dataset.sev;
+  [...logSeverityFilter.children].forEach((b) => b.classList.toggle('active', b === chip));
+  renderSearchLogs();
+});
+
 // ==================== Init ====================
 
 async function init() {

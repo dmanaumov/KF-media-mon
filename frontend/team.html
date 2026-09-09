@@ -106,6 +106,7 @@
           <div style="display:flex;gap:8px">
             <button type="button" class="btn approve small" id="addMentionBtn">+ Добавить упоминание</button>
             <button type="button" class="btn small" id="scenariosBtn">⚙ Сценарии поиска</button>
+            <button type="button" class="btn small" id="searchLogsBtn" title="Логи поиска">🗒 Логи поиска</button>
           </div>
         </div>
         <div class="scenarios-panel" id="scenariosPanel" hidden></div>
@@ -272,6 +273,26 @@
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="scnCancel">Отмена</button>
           <button type="button" class="btn approve" id="scnSave">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка логов поиска (история запусков сценариев автоматизацией) -->
+    <div class="modal-overlay" id="searchLogsModalOverlay" hidden>
+      <div class="modal-card wide">
+        <div class="modal-title">Логи поиска</div>
+        <div class="hint" style="margin:2px 0 10px">Запуски сценариев автоматизацией: результат и примечания.</div>
+        <div class="log-severity-filter" id="logSeverityFilter">
+          <button type="button" class="filter small active" data-sev="all">Все</button>
+          <button type="button" class="filter small" data-sev="info">Инфо</button>
+          <button type="button" class="filter small" data-sev="debug">Отладка</button>
+          <button type="button" class="filter small" data-sev="important">Важно</button>
+        </div>
+        <div class="log-list" id="searchLogList"></div>
+        <div class="empty" id="searchLogsEmpty" hidden></div>
+        <div class="loading" id="searchLogsLoading" hidden>Загружаем логи…</div>
+        <div class="modal-actions" style="margin-top:14px">
+          <button type="button" class="btn ghost" id="searchLogsCloseBtn">Закрыть</button>
         </div>
       </div>
     </div>

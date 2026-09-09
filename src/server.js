@@ -11,6 +11,7 @@ const projectSettings = require('./projectSettings');
 const mentions = require('./mentions');
 const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOptions, findPropertyDef } = require('./taskMapper');
 const scenarios = require('./scenarios');
+const searchLogs = require('./searchLogs');
 
 const app = express();
 app.use(compression());
@@ -538,6 +539,36 @@ app.get('/api/cron/scenarios', async (req, res) => {
   }
 });
 
+// --- Ingest: run reports from the external automation (n8n) ---
+// POST /api/cron/search-logs  with header  X-Automation-Api-Key
+// The automation reports that it ran a scenario: what came out of it and any
+// notes. Body: { providerName?, items: [ { scenarioId?, scenarioName, status?,
+// note?, severity? } ] }; severity ∈ info | debug | important.
+app.post('/api/cron/search-logs', async (req, res) => {
+  const secret = config.automationApiKey;
+  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
+  }
+  const body = req.body || {};
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) {
+    return res.status(400).json({ error: 'empty_items', message: 'Body must contain non-empty "items" array.' });
+  }
+  if (items.length > 500) {
+    return res.status(400).json({ error: 'too_many_items', message: 'Max 500 items per request.' });
+  }
+  const provider = {
+    name: String(body.providerName || body.provider || '').trim().slice(0, 200) || 'n8n',
+  };
+  try {
+    const result = await searchLogs.insertLogs(config.mattermostBoardId, provider, items);
+    res.json({ ok: true, inserted: result.inserted });
+  } catch (err) {
+    console.error('[api] /api/cron/search-logs failed:', err.message);
+    res.status(502).json({ error: 'insert_failed', message: err.message });
+  }
+});
+
 // --- Team cabinet: search scenarios (the "filters" n8n runs) ---
 app.get('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
   try {
@@ -581,6 +612,21 @@ app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (re
     res.json({ ok: true });
   } catch (err) {
     console.error('[api] /api/team/search-scenarios DELETE failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Team cabinet: search automation logs ---
+// GET /api/team/search-logs?limit=100&severity=info|debug|important
+app.get('/api/team/search-logs', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const logs = await searchLogs.listLogs(config.mattermostBoardId, {
+      limit: req.query.limit,
+      severity: String(req.query.severity || ''),
+    });
+    res.json({ logs });
+  } catch (err) {
+    console.error('[api] /api/team/search-logs GET failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
 });

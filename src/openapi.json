@@ -382,6 +382,44 @@
           "502": { "$ref": "#/components/responses/DbError" }
         }
       }
+    },
+    "/api/cron/search-logs": {
+      "post": {
+        "tags": ["Автоматизация"],
+        "summary": "Записать логи запуска сценариев",
+        "description": "Внешняя автоматизация (n8n) сообщает, что сценарий поиска был выполнен: результат и примечания. Header: X-Automation-Api-Key.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchLogsRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Записано",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchLogsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/search-logs": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Логи поиска (попап «Логи поиска»)",
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "default": 100 } },
+          { "name": "severity", "in": "query", "required": false, "schema": { "type": "string", "enum": ["info", "debug", "important"] }, "description": "Фильтр по критичности" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Логи",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "logs": { "type": "array", "items": { "$ref": "#/components/schemas/SearchLog" } } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
     }
   },
   "components": {
@@ -533,6 +571,51 @@
           }
         }
       },
+      "SearchLog": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "scenarioId": { "type": "integer", "nullable": true },
+          "scenarioName": { "type": "string", "description": "Название фильтра (сценария поиска)" },
+          "status": { "type": "string", "description": "Результат запуска, напр.: ok, error, partial" },
+          "note": { "type": "string", "description": "Примечания" },
+          "severity": { "type": "string", "enum": ["info", "debug", "important"], "description": "Критичность" },
+          "createdBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SearchLogsRequest": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "providerName": { "type": "string", "default": "n8n" },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/SearchLogItem" }
+          }
+        },
+        "example": {
+          "providerName": "n8n",
+          "items": [
+            { "scenarioId": 1, "scenarioName": "ФЛГ — мониторинг", "status": "ok", "note": "найдено 4 публикации, 3 пропущено как дубли", "severity": "info" },
+            { "scenarioName": "Сивух — Яндекс", "status": "error", "note": "сеть недоступна, запрос не выполнен", "severity": "important" }
+          ]
+        }
+      },
+      "SearchLogItem": {
+        "type": "object",
+        "required": ["scenarioName"],
+        "properties": {
+          "scenarioId": { "type": "integer", "description": "ID сценария (если известен)" },
+          "scenarioName": { "type": "string", "description": "Название фильтра" },
+          "status": { "type": "string", "default": "ok", "description": "Результат запуска: ok | error | partial | …" },
+          "note": { "type": "string", "description": "Примечания" },
+          "severity": { "type": "string", "enum": ["info", "debug", "important"], "default": "info", "description": "Критичность" }
+        }
+      },
+      "SearchLogsResponse": { "type": "object", "properties": { "ok": { "type": "boolean" }, "inserted": { "type": "integer" } } },
       "LoginRequest": { "type": "object", "required": ["login_id", "password"], "properties": { "login_id": { "type": "string" }, "password": { "type": "string" } } },
       "MeResponse": {
         "type": "object",

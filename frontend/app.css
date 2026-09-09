@@ -220,6 +220,16 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .scenario-form .modal-row{grid-template-columns:1fr 1fr}
 .scenario-empty{font-size:12.5px;color:var(--muted);line-height:1.5}
 
+/* --- Search logs popup --- */
+.filter.small{padding:6px 11px;font-size:11.5px}
+.log-severity-filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.log-list{display:grid;gap:8px;max-height:48vh;overflow:auto}
+.log-row{background:#fff;border:1px solid var(--line);border-radius:14px;padding:11px 13px}
+.log-row-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.log-name{font-size:13px;line-height:1.3}
+.log-meta{font-size:11.5px;color:var(--muted);margin-top:4px}
+.log-note{margin-top:6px;font-size:12px;color:var(--ink);background:#F4F6F5;border-radius:10px;padding:7px 9px;white-space:pre-wrap}
+
 /* --- Stats period selector --- */
 .period-select{display:inline-flex;gap:3px;max-width:100%;overflow-x:auto;scrollbar-width:none;background:#F1F4F3;border-radius:var(--radius-pill);padding:4px;margin-bottom:14px}
 .period-select::-webkit-scrollbar{display:none}
@@ -358,6 +368,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .scenarios-panel{background:#262222}
   .scenario-act-btn{background:#222626;border-color:#2A3532}
   .scenario-act-btn:hover{background:#2C302E;border-color:#3A4140}
+  .log-row{background:#262222}
+  .log-note{background:#222626;color:#DDE3E1}
   .tag{background:#222626;color:#B7C2BE}
   .tag.neg{background:#2E1919;color:#E58B8B}
   .tag.pos{background:#213626;color:#85DCA2}

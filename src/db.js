@@ -116,6 +116,26 @@ async function initSchema() {
   await pool.query(`ALTER TABLE search_scenarios DROP COLUMN IF EXISTS query;`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_board_idx ON search_scenarios (board_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_scenarios_project_idx ON search_scenarios (board_id, project_id);`);
+
+  // Search automation logs — the external system (n8n) reports each run of a
+  // scenario (when it started, what it found, what went wrong). The team
+  // cabinet shows these in a "Логи поиска" popup so users can see whether a
+  // filter was actually executed.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS search_logs (
+      id bigserial PRIMARY KEY,
+      board_id text NOT NULL,
+      scenario_id bigint,
+      scenario_name text NOT NULL DEFAULT '',
+      status text NOT NULL DEFAULT 'ok',
+      note text NOT NULL DEFAULT '',
+      severity text NOT NULL DEFAULT 'info',
+      created_by text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_board_idx ON search_logs (board_id, created_at);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_scenario_idx ON search_logs (scenario_id);`);
 }
 
 module.exports = { pool, requirePool, initSchema };
