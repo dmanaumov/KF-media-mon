@@ -558,11 +558,11 @@ app.post('/api/cron/search-logs', async (req, res) => {
     return res.status(400).json({ error: 'too_many_items', message: 'Max 500 items per request.' });
   }
   const provider = {
-    name: String(body.providerName || body.provider || '').trim().slice(0, 200) || 'n8n',
+    name: String(body.providerName || body.provider || '').trim().slice(0, 200) || 'auto',
   };
   try {
     const result = await searchLogs.insertLogs(config.mattermostBoardId, provider, items);
-    res.json({ ok: true, inserted: result.inserted });
+    res.json({ ok: true, inserted: result.inserted, failed: result.failed, details: result.details });
   } catch (err) {
     console.error('[api] /api/cron/search-logs failed:', err.message);
     res.status(502).json({ error: 'insert_failed', message: err.message });

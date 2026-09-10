@@ -31,11 +31,11 @@ async function insertLogs(boardId, provider, items) {
   const pool = db.requirePool();
   const createdBy = String((provider && provider.name) || 'external');
 
-  let inserted = 0;
+  const details = [];
   for (const raw of items || []) {
-    if (!raw) continue;
+    if (!raw) { details.push({ error: 'empty item' }); continue; }
     const name = String(raw.scenarioName || '').trim().slice(0, 300);
-    if (!name) continue;
+    if (!name) { details.push({ error: 'scenarioName is required' }); continue; }
 
     const scenarioId = raw.scenarioId != null ? Number(raw.scenarioId) || null : null;
     let projectId = raw.projectId != null ? String(raw.projectId).trim().slice(0, 100) : '';
@@ -47,23 +47,29 @@ async function insertLogs(boardId, provider, items) {
       if (sc.rows[0]) projectId = String(sc.rows[0].project_id || '').slice(0, 100);
     }
 
-    const { rows } = await pool.query(
-      `INSERT INTO search_logs (board_id, scenario_id, scenario_name, status, note, severity, project_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [
-        boardId,
-        scenarioId,
-        name,
-        String(raw.status || '').trim().slice(0, 50) || 'ok',
-        String(raw.note || '').trim().slice(0, 1000),
-        normSeverity(raw.severity),
-        projectId,
-        createdBy,
-      ]
-    );
-    if (rows.length) inserted++;
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO search_logs (board_id, scenario_id, scenario_name, status, note, severity, project_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [
+          boardId,
+          scenarioId,
+          name,
+          String(raw.status || '').trim().slice(0, 50) || 'ok',
+          String(raw.note || '').trim().slice(0, 1000),
+          normSeverity(raw.severity),
+          projectId,
+          createdBy,
+        ]
+      );
+      if (rows.length) details.push({ id: rows[0].id });
+    } catch (err) {
+      details.push({ scenarioName: name, error: String((err && err.message) || err) });
+    }
   }
-  return { inserted };
+  const inserted = details.filter((d) => d.id != null).length;
+  const failed = details.length - inserted;
+  return { inserted, failed, details };
 }
 
 async function listLogs(boardId, { limit = 100, severity = '', project = '' } = {}) {
