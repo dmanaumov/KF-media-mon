@@ -32,34 +32,78 @@
       </div>
     </header>
 
-    <div class="reach-summary" id="summary" hidden></div>
+    <nav class="tab-bar" id="adminTabBar" hidden>
+      <button type="button" class="tab active" data-tab="projects">Проекты</button>
+      <button type="button" class="tab" data-tab="acl">Доступ</button>
+    </nav>
 
-    <div class="loading" id="loading" hidden>Загружаем проекты…</div>
-    <div class="error-box" id="errorBox" hidden></div>
+    <section id="panelProjects">
+      <div class="reach-summary" id="summary" hidden></div>
 
-    <div class="admin-card" id="addCard" hidden>
-      <h2>Как это работает</h2>
-      <p>Каждому клиенту (проекту на доске) можно сгенерировать персональную ссылку и заполнить карточку — она поможет искать упоминания в сети. Отметьте проект архивным, чтобы он пропал из списка у команды; данные и ссылка при этом сохранятся.</p>
-    </div>
+      <div class="loading" id="loading" hidden>Загружаем проекты…</div>
+      <div class="error-box" id="errorBox" hidden></div>
 
-    <div id="tableWrap" hidden>
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>Проект</th>
-            <th class="num">Фактов</th>
-            <th class="num">Опубл.</th>
-            <th class="num">Охват</th>
-            <th>Ссылка клиента</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </div>
+      <div class="admin-card" id="addCard" hidden>
+        <h2>Как это работает</h2>
+        <p>Каждому клиенту (проекту на доске) можно сгенерировать персональную ссылку и заполнить карточку — она поможет искать упоминания в сети. Отметьте проект архивным, чтобы он пропал из списка у команды; данные и ссылка при этом сохранятся.</p>
+      </div>
 
-    <div class="empty" id="empty" hidden></div>
+      <div id="tableWrap" hidden>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Проект</th>
+              <th class="num">Фактов</th>
+              <th class="num">Опубл.</th>
+              <th class="num">Охват</th>
+              <th>Ссылка клиента</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+
+      <div class="empty" id="empty" hidden></div>
+    </section>
+
+    <section id="panelAcl" hidden>
+      <div class="admin-card" id="aclIntro">
+        <h2>Доступ команды к проектам</h2>
+        <p>Две независимые привилегии на сотрудника: <b>настройки проектов</b> (карточка клиента, архив, ссылка) и <b>настройка прав</b> (эта вкладка). По умолчанию сотрудник видит все проекты — доступ к конкретным проектам ограничивается по одному человеку за раз; как только у него появляется хоть один отмеченный проект, он перестаёт видеть остальные.</p>
+      </div>
+      <div class="loading" id="aclLoading" hidden>Загружаем список команды…</div>
+      <div class="error-box" id="aclErrorBox" hidden></div>
+      <div id="aclTableWrap" hidden>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Сотрудник</th>
+              <th>Настройки проектов</th>
+              <th>Настройка прав</th>
+              <th>Доступ к проектам</th>
+            </tr>
+          </thead>
+          <tbody id="aclRows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="aclEmpty" hidden></div>
+    </section>
+
     <div class="toast" id="toast" role="status"></div>
+  </div>
+
+  <!-- Модалка выбора доступных проектов для одного сотрудника -->
+  <div class="modal-overlay" id="accessModalOverlay" hidden>
+    <div class="modal-card">
+      <div class="modal-title" id="accessModalTitle">Доступ к проектам</div>
+      <div class="hint" style="margin:0 0 4px">Ничего не отмечено — сотрудник видит все проекты. Отметьте хотя бы один, чтобы ограничить список только им.</div>
+      <div class="status-filter-list" id="accessProjectList" style="max-height:340px;overflow:auto"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="accessCancelBtn">Отмена</button>
+        <button type="button" class="btn approve" id="accessSaveBtn">Сохранить</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-overlay" id="settingsModalOverlay" hidden>

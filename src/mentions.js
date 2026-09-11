@@ -195,4 +195,29 @@ async function monthlyStats(boardId, projectId) {
   });
 }
 
-module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, SENTIMENTS, EVENT_TYPES };
+// Board-wide alert counts per project, for the project dropdown highlighting
+// (🔥 negative-media, ⚠️ hot-task — see server.js /api/team/projects) and the
+// "СМИ" tab badge when no single project is selected.
+async function countsByProject(boardId, projectIds) {
+  if (!projectIds || !projectIds.length) return new Map();
+  const pool = db.requirePool();
+  const { rows } = await pool.query(
+    `SELECT project_id,
+            count(*) FILTER (WHERE sentiment = 'negative') AS negative,
+            count(*) FILTER (WHERE urgent) AS urgent,
+            count(*) FILTER (WHERE sentiment = 'negative' OR urgent) AS alerts
+     FROM mentions
+     WHERE board_id = $1 AND project_id = ANY($2::text[])
+     GROUP BY project_id`,
+    [boardId, projectIds]
+  );
+  const map = new Map();
+  rows.forEach((r) => map.set(r.project_id, {
+    negative: parseInt(r.negative, 10) || 0,
+    urgent: parseInt(r.urgent, 10) || 0,
+    alerts: parseInt(r.alerts, 10) || 0,
+  }));
+  return map;
+}
+
+module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, countsByProject, SENTIMENTS, EVENT_TYPES };

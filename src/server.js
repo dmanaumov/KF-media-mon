@@ -9,9 +9,10 @@ const db = require('./db');
 const teamAuth = require('./teamAuth');
 const projectSettings = require('./projectSettings');
 const mentions = require('./mentions');
-const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOptions, findPropertyDef } = require('./taskMapper');
+const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOptions, findPropertyDef, normLabel } = require('./taskMapper');
 const scenarios = require('./scenarios');
 const searchLogs = require('./searchLogs');
+const acl = require('./acl');
 
 const app = express();
 app.use(compression());
@@ -84,15 +85,22 @@ app.post('/api/team/login', async (req, res) => {
     const { token, user } = await mm.loginAs(String(login_id), String(password));
     const sessionId = await teamAuth.createSession(token, user);
     teamAuth.setSessionCookie(res, sessionId);
-    res.json({ user, role: teamAuth.roleFor(user), access: accessFor(user) });
+    res.json({ user, role: teamAuth.roleFor(user), access: await accessFor(user) });
   } catch (err) {
     res.status(401).json({ error: 'login_failed', message: err.message || 'Неверный логин или пароль.' });
   }
 });
 
-function accessFor(user) {
-  const role = teamAuth.roleFor(user);
-  return { admin: role.admin, staffProjectsPath: config.adminPath };
+// Two independent privileges (see src/acl.js) replace the old single
+// "admin" boolean: "admin" in the response stays as a broad "show admin
+// cabinet link" flag (true if either privilege is granted), while
+// canManageProjects/canManageAcl gate the two tabs inside it separately.
+async function accessFor(user) {
+  const [canManageProjects, canManageAcl] = await Promise.all([
+    acl.canManageProjects(config.mattermostBoardId, user),
+    acl.canManageAcl(config.mattermostBoardId, user),
+  ]);
+  return { admin: canManageProjects || canManageAcl, canManageProjects, canManageAcl, staffProjectsPath: config.adminPath };
 }
 
 app.post('/api/team/logout', (req, res) => {
@@ -101,11 +109,64 @@ app.post('/api/team/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/team/me', (req, res) => {
+app.get('/api/team/me', async (req, res) => {
   const session = teamAuth.getSession(teamAuth.sessionIdFromRequest(req));
   if (!session) return res.status(401).json({ error: 'not_logged_in' });
-  res.json({ user: session.user, role: teamAuth.roleFor(session.user), access: accessFor(session.user) });
+  res.json({ user: session.user, role: teamAuth.roleFor(session.user), access: await accessFor(session.user) });
 });
+
+// --- ACL guards: two independent privileges (project-card edits vs. this
+// ACL itself) plus per-project access narrowing. See src/acl.js. ---
+function requireManageProjects(req, res, next) {
+  const session = req.teamSession;
+  acl.canManageProjects(config.mattermostBoardId, session && session.user)
+    .then((ok) => {
+      if (!ok) return res.status(403).json({ error: 'forbidden', message: 'Недостаточно прав.' });
+      next();
+    })
+    .catch((err) => res.status(502).json({ error: 'acl_error', message: err.message }));
+}
+
+function requireManageAcl(req, res, next) {
+  const session = req.teamSession;
+  acl.canManageAcl(config.mattermostBoardId, session && session.user)
+    .then((ok) => {
+      if (!ok) return res.status(403).json({ error: 'forbidden', message: 'Недостаточно прав.' });
+      next();
+    })
+    .catch((err) => res.status(502).json({ error: 'acl_error', message: err.message }));
+}
+
+function requireAnyAdminPrivilege(req, res, next) {
+  const session = req.teamSession;
+  Promise.all([
+    acl.canManageProjects(config.mattermostBoardId, session && session.user),
+    acl.canManageAcl(config.mattermostBoardId, session && session.user),
+  ])
+    .then(([p, a]) => {
+      if (!p && !a) return res.status(403).json({ error: 'forbidden', message: 'Недостаточно прав.' });
+      next();
+    })
+    .catch((err) => res.status(502).json({ error: 'acl_error', message: err.message }));
+}
+
+// Used inline inside route handlers (not as middleware) since the project id
+// often comes from the body/param rather than being known up front. Writes
+// the 403 itself and returns false so the caller can `if (!(await …)) return;`.
+async function requireProjectAccess(req, res, project) {
+  const ok = await acl.isProjectAccessible(config.mattermostBoardId, req.teamSession && req.teamSession.user, project);
+  if (!ok) {
+    res.status(403).json({ error: 'forbidden', message: 'Нет доступа к этому проекту.' });
+    return false;
+  }
+  return true;
+}
+
+async function narrowByAccess(user, list, idFn) {
+  const access = await acl.getProjectAccess(config.mattermostBoardId, user && user.id);
+  if (!access) return list; // unrestricted
+  return list.filter((item) => access.has(idFn(item)));
+}
 
 // --- Team cabinet data (requireTeamAuth) ---
 app.get('/api/team/projects', teamAuth.requireTeamAuth, async (req, res) => {
@@ -113,8 +174,25 @@ app.get('/api/team/projects', teamAuth.requireTeamAuth, async (req, res) => {
     const { board } = await loadBoard(config.mattermostBoardId);
     const all = projectOptions(board);
     const settingsMap = await settingsMapSafe();
-    const visible = all.filter((p) => !(settingsMap.get(p.id) || {}).archived);
-    res.json({ projects: visible });
+    let visible = all.filter((p) => !(settingsMap.get(p.id) || {}).archived);
+    visible = await narrowByAccess(req.teamSession.user, visible, (p) => p.id);
+
+    const [{ tasks }, countsMap] = await Promise.all([
+      loadTeamTasks({}),
+      mentions.countsByProject(config.mattermostBoardId, visible.map((p) => p.id)).catch((err) => {
+        console.error('[api] mentions.countsByProject failed:', err.message);
+        return new Map();
+      }),
+    ]);
+    const hotProjectIds = new Set();
+    for (const t of tasks) {
+      if (t.hot && t.project && t.project.id) hotProjectIds.add(t.project.id);
+    }
+    const projects = visible.map((p) => {
+      const c = countsMap.get(p.id) || {};
+      return { id: p.id, label: p.label, hot: hotProjectIds.has(p.id), negative: c.negative || 0, alerts: c.alerts || 0 };
+    });
+    res.json({ projects });
   } catch (err) {
     console.error('[api] /api/team/projects failed:', err.message);
     res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
@@ -124,6 +202,7 @@ app.get('/api/team/projects', teamAuth.requireTeamAuth, async (req, res) => {
 app.get('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const { project, status, fact } = req.query;
+    if (project && !(await requireProjectAccess(req, res, project))) return;
     const result = await loadTeamTasks({
       project: project || '',
       onlyFacts: fact === '1',
@@ -137,11 +216,55 @@ app.get('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
         (t) => !t.project || !t.project.id || !(settingsMap.get(t.project.id) || {}).archived
       );
       result.meta.projects = result.meta.projects.filter((p) => !(settingsMap.get(p.id) || {}).archived);
+      result.tasks = await narrowByAccess(req.teamSession.user, result.tasks, (t) => t.project && t.project.id);
+      result.meta.projects = await narrowByAccess(req.teamSession.user, result.meta.projects, (p) => p.id);
     }
     res.json(result);
   } catch (err) {
     console.error('[api] /api/team/tasks failed:', err.message);
     res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
+// Task creation — the "+ Добавить задачу" button (task list and calendar).
+// Same property-writing shape as PATCH below, just against a freshly
+// inserted card instead of an existing one.
+app.post('/api/team/tasks', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const title = String(body.title || '').trim();
+    if (!title) return res.status(400).json({ error: 'missing_title', message: 'Введите название задачи.' });
+    if (body.projectId && !(await requireProjectAccess(req, res, body.projectId))) return;
+
+    const { board } = await loadBoard(config.mattermostBoardId, { fresh: true });
+    const projectProp = findPropertyDef(board, config.projectPropertyName);
+    const statusProp = findPropertyDef(board, config.statusPropertyName);
+    const deadlineProp = findPropertyDef(board, config.datePropertyName);
+    const smiProp = findPropertyDef(board, config.smiPropertyName);
+    const urlProp = findPropertyDef(board, config.urlPropertyName);
+    const uvmProp = findPropertyDef(board, config.uvmPropertyName);
+    const assigneeProp = findPropertyDef(board, config.assigneePropertyName);
+
+    const properties = {};
+    if (projectProp && body.projectId) properties[projectProp.id] = body.projectId;
+    if (statusProp) {
+      const statusId = body.statusId || (statusProp.options && statusProp.options[0] && statusProp.options[0].id);
+      if (statusId) properties[statusProp.id] = statusId;
+    }
+    if (smiProp && body.smi) properties[smiProp.id] = String(body.smi);
+    if (urlProp && body.url) properties[urlProp.id] = String(body.url);
+    if (uvmProp && body.uvm) properties[uvmProp.id] = String(body.uvm);
+    if (assigneeProp && body.assigneeId) properties[assigneeProp.id] = body.assigneeId;
+    if (deadlineProp && body.deadline) {
+      properties[deadlineProp.id] = JSON.stringify({ from: Date.parse(`${body.deadline}T00:00:00Z`) });
+    }
+
+    const created = await mm.createCard(config.mattermostBoardId, { title, properties });
+    invalidate();
+    res.json({ id: created.id });
+  } catch (err) {
+    console.error('[api] POST /api/team/tasks failed:', err.message);
+    res.status(502).json({ error: 'mattermost_write_failed', message: err.message });
   }
 });
 
@@ -158,10 +281,23 @@ async function findCardFresh(cardId) {
   return { board, card };
 }
 
+function cardProjectId(board, card) {
+  const projectProp = findPropertyDef(board, config.projectPropertyName);
+  return projectProp ? (card.properties || {})[projectProp.id] || null : null;
+}
+
+// Defense in depth: the task list/dropdown already only offers accessible
+// projects, but a card id can be opened directly (URL, old bookmark) — this
+// re-checks against the card's own project before returning/writing it.
+async function requireCardAccess(req, res, board, card) {
+  return requireProjectAccess(req, res, cardProjectId(board, card));
+}
+
 app.get('/api/team/tasks/:id', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const { board, card } = await findCardFresh(req.params.id);
     if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    if (!(await requireCardAccess(req, res, board, card))) return;
     const [blocks, members] = await Promise.all([
       mm.listBlocks(config.mattermostBoardId),
       loadTeamMembers(),
@@ -185,7 +321,9 @@ app.patch('/api/team/tasks/:id', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const { board, card } = await findCardFresh(req.params.id);
     if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    if (!(await requireCardAccess(req, res, board, card))) return;
     const body = req.body || {};
+    if (body.projectId && !(await requireProjectAccess(req, res, body.projectId))) return;
 
     const projectProp = findPropertyDef(board, config.projectPropertyName);
     const statusProp = findPropertyDef(board, config.statusPropertyName);
@@ -237,8 +375,9 @@ app.post('/api/team/tasks/:id/comments', teamAuth.requireTeamAuth, async (req, r
   try {
     const text = String((req.body && req.body.text) || '').trim();
     if (!text) return res.status(400).json({ error: 'empty_comment', message: 'Пустой комментарий.' });
-    const { card } = await findCardFresh(req.params.id);
+    const { board, card } = await findCardFresh(req.params.id);
     if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    if (!(await requireCardAccess(req, res, board, card))) return;
     await mm.insertBlocks(config.mattermostBoardId, [{
       id: '', boardId: config.mattermostBoardId, parentId: card.id, type: 'comment',
       title: text, fields: {}, createAt: Date.now(), updateAt: Date.now(), deleteAt: 0,
@@ -260,8 +399,9 @@ app.post('/api/team/tasks/:id/attachments', teamAuth.requireTeamAuth, async (req
     if (buffer.length > MAX_ATTACHMENT_BYTES) {
       return res.status(400).json({ error: 'file_too_large', message: 'Файл больше 8 МБ.' });
     }
-    const { card } = await findCardFresh(req.params.id);
+    const { board, card } = await findCardFresh(req.params.id);
     if (!card) return res.status(404).json({ error: 'not_found', message: 'Задача не найдена.' });
+    if (!(await requireCardAccess(req, res, board, card))) return;
     const fileId = await mm.uploadFile(config.teamId, config.mattermostBoardId, buffer, filename, mimeType);
     const isImage = /^image\//.test(mimeType || '');
     await mm.insertBlocks(config.mattermostBoardId, [{
@@ -303,6 +443,7 @@ function requireProjectParam(req, res) {
 app.get('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
+  if (!(await requireProjectAccess(req, res, project))) return;
   try {
     const list = await mentions.listMentions(config.mattermostBoardId, project);
     res.json({ mentions: list });
@@ -315,6 +456,7 @@ app.get('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
 app.post('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
+  if (!(await requireProjectAccess(req, res, project))) return;
   try {
     const user = (req.teamSession && req.teamSession.user) || {};
     const createdBy = user.username || user.email || '';
@@ -329,6 +471,7 @@ app.post('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
 app.put('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
+  if (!(await requireProjectAccess(req, res, project))) return;
   try {
     const m = await mentions.updateMention(req.params.id, config.mattermostBoardId, project, req.body || {});
     if (!m) return res.status(404).json({ error: 'not_found', message: 'Упоминание не найдено.' });
@@ -342,6 +485,7 @@ app.put('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => 
 app.delete('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
+  if (!(await requireProjectAccess(req, res, project))) return;
   try {
     const ok = await mentions.deleteMention(req.params.id, config.mattermostBoardId, project);
     if (!ok) return res.status(404).json({ error: 'not_found', message: 'Упоминание не найдено.' });
@@ -356,6 +500,7 @@ app.delete('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) 
 app.get('/api/team/mentions/stats', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
+  if (!(await requireProjectAccess(req, res, project))) return;
   try {
     const stats = await mentions.monthlyStats(config.mattermostBoardId, project);
     res.json({ stats });
@@ -390,16 +535,22 @@ function projectLabelFor(board, projectId) {
   return prop ? optionLabelById(prop, projectId) || '' : '';
 }
 
+// Client cabinet only ever shows cards in config.clientVisibleStatuses
+// ("Согласовываем со спикером" / "Отдали в редакцию" / "Опубликован" by
+// default) — the internal pipeline (idea, draft, revisions, …) is not the
+// client's business.
 app.get('/api/tasks', async (req, res) => {
   const project = req.query.project || '';
   if (!project) {
     return res.status(400).json({ error: 'missing_project', message: 'Не указан проект.' });
   }
   try {
-    const result = await loadTeamTasks({ project, onlyFacts: true });
+    const result = await loadTeamTasks({ project, statusAllowList: config.clientVisibleStatuses });
     if (!result.meta.projectFilterMatched) {
       return res.status(404).json({ error: 'project_not_found', message: 'Такой проект не найден на борде.' });
     }
+    const allow = new Set(config.clientVisibleStatuses.map(normLabel));
+    result.meta.statuses = result.meta.statuses.filter((s) => allow.has(normLabel(s.label)));
     res.json(result);
   } catch (err) {
     console.error('[api] /api/tasks failed:', err.message);
@@ -407,8 +558,8 @@ app.get('/api/tasks', async (req, res) => {
   }
 });
 
-// --- Admin: client link generator + summary (requireAdminAuth) ---
-app.get('/api/projects', teamAuth.requireAdminAuth, async (req, res) => {
+// --- Admin: client link generator + summary (requireManageProjects) ---
+app.get('/api/projects', teamAuth.requireTeamAuth, requireManageProjects, async (req, res) => {
   try {
     const { board, cards } = await loadBoard(config.mattermostBoardId);
     const projects = projectOptions(board);
@@ -441,7 +592,7 @@ app.get('/api/projects', teamAuth.requireAdminAuth, async (req, res) => {
   }
 });
 
-app.post('/api/projects/:projectId/regenerate-link', teamAuth.requireAdminAuth, async (req, res) => {
+app.post('/api/projects/:projectId/regenerate-link', teamAuth.requireTeamAuth, requireManageProjects, async (req, res) => {
   try {
     const token = await projectSettings.regenerateToken(config.mattermostBoardId, req.params.projectId);
     invalidate();
@@ -453,7 +604,7 @@ app.post('/api/projects/:projectId/regenerate-link', teamAuth.requireAdminAuth, 
 });
 
 // --- Admin: project "card" (archive flag, client identity, socials) ---
-app.get('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, async (req, res) => {
+app.get('/api/admin/projects/:projectId/settings', teamAuth.requireTeamAuth, requireManageProjects, async (req, res) => {
   try {
     const settings = await projectSettings.getSettings(config.mattermostBoardId, req.params.projectId);
     res.json({ settings });
@@ -463,13 +614,69 @@ app.get('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, as
   }
 });
 
-app.put('/api/admin/projects/:projectId/settings', teamAuth.requireAdminAuth, async (req, res) => {
+app.put('/api/admin/projects/:projectId/settings', teamAuth.requireTeamAuth, requireManageProjects, async (req, res) => {
   try {
     const settings = await projectSettings.saveSettings(config.mattermostBoardId, req.params.projectId, req.body || {});
     res.json({ settings });
   } catch (err) {
     console.error('[api] admin settings PUT failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Admin: ACL — who on the team can manage what (see src/acl.js) ---
+app.get('/api/admin/acl', teamAuth.requireTeamAuth, requireManageAcl, async (req, res) => {
+  try {
+    const { board } = await loadBoard(config.mattermostBoardId);
+    const settingsMap = await settingsMapSafe();
+    const projects = projectOptions(board).filter((p) => !(settingsMap.get(p.id) || {}).archived);
+    const members = await loadTeamMembers({ fresh: true });
+    const [permsMap, accessMap] = await Promise.all([
+      acl.listPermissions(config.mattermostBoardId),
+      acl.listAllAccess(config.mattermostBoardId),
+    ]);
+    const users = members.map((m) => {
+      const perms = permsMap.get(m.id) || { canManageProjects: false, canManageAcl: false };
+      const access = accessMap.get(m.id);
+      return {
+        id: m.id,
+        label: m.label,
+        username: m.username,
+        canManageProjects: perms.canManageProjects,
+        canManageAcl: perms.canManageAcl,
+        superAdmin: acl.isSuperAdmin({ username: m.username }),
+        projectIds: access ? [...access] : null, // null = unrestricted (sees every project)
+      };
+    });
+    res.json({ users, projects });
+  } catch (err) {
+    console.error('[api] /api/admin/acl GET failed:', err.message);
+    res.status(502).json({ error: 'acl_error', message: err.message });
+  }
+});
+
+app.put('/api/admin/acl/:userId/permissions', teamAuth.requireTeamAuth, requireManageAcl, async (req, res) => {
+  try {
+    const body = req.body || {};
+    await acl.setPermissions(config.mattermostBoardId, req.params.userId, {
+      canManageProjects: !!body.canManageProjects,
+      canManageAcl: !!body.canManageAcl,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] PUT /api/admin/acl/:userId/permissions failed:', err.message);
+    res.status(502).json({ error: 'acl_error', message: err.message });
+  }
+});
+
+app.put('/api/admin/acl/:userId/access', teamAuth.requireTeamAuth, requireManageAcl, async (req, res) => {
+  try {
+    const projectIds = Array.isArray(req.body && req.body.projectIds) ? req.body.projectIds : [];
+    await acl.setProjectAccess(config.mattermostBoardId, req.params.userId, projectIds);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] PUT /api/admin/acl/:userId/access failed:', err.message);
+    res.status(502).json({ error: 'acl_error', message: err.message });
   }
 });
 
@@ -573,7 +780,8 @@ app.post('/api/cron/search-logs', async (req, res) => {
 app.get('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const list = await scenarios.listScenarios(config.mattermostBoardId, { includeArchived: true });
-    res.json({ scenarios: list });
+    const visible = await narrowByAccess(req.teamSession.user, list, (s) => s.projectId);
+    res.json({ scenarios: visible });
   } catch (err) {
     console.error('[api] /api/team/search-scenarios GET failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
@@ -583,6 +791,7 @@ app.get('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res)
 app.post('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res) => {
   const projectId = String((req.body && req.body.projectId) || '').trim();
   if (!projectId) return res.status(400).json({ error: 'missing_project', message: 'Выберите проект.' });
+  if (!(await requireProjectAccess(req, res, projectId))) return;
   try {
     const user = (req.teamSession && req.teamSession.user) || {};
     const createdBy = user.username || user.email || '';
@@ -596,6 +805,11 @@ app.post('/api/team/search-scenarios', teamAuth.requireTeamAuth, async (req, res
 
 app.put('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (req, res) => {
   try {
+    const existing = await scenarios.getScenario(req.params.id, config.mattermostBoardId);
+    if (!existing) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
+    if (!(await requireProjectAccess(req, res, existing.projectId))) return;
+    const newProjectId = String((req.body && req.body.projectId) || existing.projectId || '').trim();
+    if (newProjectId !== existing.projectId && !(await requireProjectAccess(req, res, newProjectId))) return;
     const s = await scenarios.updateScenario(req.params.id, config.mattermostBoardId, req.body || {});
     if (!s) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
     res.json({ scenario: s });
@@ -607,6 +821,9 @@ app.put('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (req, 
 
 app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (req, res) => {
   try {
+    const existing = await scenarios.getScenario(req.params.id, config.mattermostBoardId);
+    if (!existing) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
+    if (!(await requireProjectAccess(req, res, existing.projectId))) return;
     const ok = await scenarios.deleteScenario(req.params.id, config.mattermostBoardId);
     if (!ok) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
     res.json({ ok: true });
@@ -659,7 +876,7 @@ app.use(
 );
 
 app.get('/l/:token', (req, res) => res.sendFile(path.join(frontendDir, 'index.html')));
-app.get(config.adminPath, teamAuth.requireAdminAuth, (req, res) => res.sendFile(path.join(frontendDir, 'admin.html')));
+app.get(config.adminPath, teamAuth.requireTeamAuth, requireAnyAdminPrivilege, (req, res) => res.sendFile(path.join(frontendDir, 'admin.html')));
 app.get(config.teamCabinetPath, (req, res) => res.sendFile(path.join(frontendDir, 'team.html')));
 app.get('/', (req, res) => res.redirect(config.teamCabinetPath));
 

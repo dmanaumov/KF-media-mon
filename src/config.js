@@ -15,12 +15,21 @@ module.exports = {
   projectPropertyName: process.env.MM_PROJECT_PROPERTY_NAME || 'Проект',
   statusPropertyName: process.env.MM_STATUS_PROPERTY_NAME || 'Статус',
   datePropertyName: process.env.MM_DATE_PROPERTY_NAME || 'Дедлайн // Релиз',
+  timeDeadlinePropertyName: process.env.MM_TIME_DEADLINE_PROPERTY_NAME || 'Время дедлайна (если применимо)',
   smiPropertyName: process.env.MM_SMI_PROPERTY_NAME || 'СМИ/ресурс',
   urlPropertyName: process.env.MM_URL_PROPERTY_NAME || 'Ссылка на публикацию',
   uvmPropertyName: process.env.MM_UVM_PROPERTY_NAME || 'UVM',
   typePropertyName: process.env.MM_TYPE_PROPERTY_NAME || 'Тип текста',
   priorityPropertyName: process.env.MM_PRIORITY_PROPERTY_NAME || 'Приоритет',
   assigneePropertyName: process.env.MM_ASSIGNEE_PROPERTY_NAME || 'Ответственный',
+
+  // Client cabinet (anonymous /l/:token link) only ever shows cards in these
+  // statuses — the client should see "approving with speaker / sent to
+  // editorial / published", not the internal pipeline (idea, draft, etc).
+  clientVisibleStatuses: (process.env.CLIENT_VISIBLE_STATUSES || 'Согласовываем со спикером,Отдали в редакцию,Опубликован')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 
   cacheTtlMs: parseInt(process.env.CACHE_TTL_MS || '10000', 10),
   requestTimeoutMs: parseInt(process.env.MM_REQUEST_TIMEOUT_MS || '15000', 10),

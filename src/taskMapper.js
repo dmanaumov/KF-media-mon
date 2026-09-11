@@ -49,6 +49,56 @@ function parsePropertyDate(raw) {
   return null;
 }
 
+// "Время дедлайна (если применимо)" is free text — usually just a time of
+// day ("18:00") that refines the same day as "Дедлайн // Релиз", but
+// sometimes carries its own full date. Pull out a calendar date (YYYY-MM-DD)
+// from it if one is present; a bare time with no date yields null (it
+// doesn't move the day, so it can't make the deadline "earlier" at the
+// whole-day granularity the rest of the app uses for highlighting).
+function parseDateFromFreeText(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (m) return `${m[3]}-${String(+m[2]).padStart(2, '0')}-${String(+m[1]).padStart(2, '0')}`;
+  m = s.match(/(\d{1,2})\.(\d{1,2})(?!\.\d)/);
+  if (m) {
+    const year = new Date().getUTCFullYear();
+    return `${year}-${String(+m[2]).padStart(2, '0')}-${String(+m[1]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+// The "hot" deadline used for burning/overdue highlighting: the earlier of
+// "Дедлайн // Релиз" and any calendar date found in "Время дедлайна (если
+// применимо)" — per Дмитрий 2026-09-09 ("надо использовать самое раннее").
+function earliestDeadline(dateStr, timeFieldRaw) {
+  const fromTimeField = parseDateFromFreeText(timeFieldRaw);
+  if (dateStr && fromTimeField) return dateStr < fromTimeField ? dateStr : fromTimeField;
+  return dateStr || fromTimeField || null;
+}
+
+// Whole days from today until `dateStr` (plain YYYY-MM-DD, compared in UTC).
+// null when absent/invalid, negative once the deadline has passed. Shared by
+// the task-card highlighting (team.js has its own copy, same formula — it
+// can't import this backend module) and the project-dropdown aggregation
+// below, which both need the identical threshold to stay consistent.
+function daysToDeadline(dateStr, now) {
+  const m = dateStr && dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const due = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const n = now || new Date();
+  const today = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+  return Math.round((due - today) / 86400000);
+}
+
+// due<=3 covers both "burning" (0-3 days left) and "overdue" (negative) —
+// the single threshold used everywhere a task/project needs to be flagged hot.
+function isHotDue(days) {
+  return days !== null && days <= 3;
+}
+
 // "19.4К" / "414.7K" / plain number / "1 200" -> integer (or null)
 function parseUvm(raw) {
   if (raw === undefined || raw === null || raw === '') return null;
@@ -116,6 +166,7 @@ function buildTasks(board, cards, opts = {}) {
   const projectProp = findPropertyDef(board, config.projectPropertyName);
   const statusProp = findPropertyDef(board, config.statusPropertyName);
   const deadlineProp = findPropertyDef(board, config.datePropertyName);
+  const timeDeadlineProp = findPropertyDef(board, config.timeDeadlinePropertyName);
   const smiProp = findPropertyDef(board, config.smiPropertyName);
   const urlProp = findPropertyDef(board, config.urlPropertyName);
   const uvmProp = findPropertyDef(board, config.uvmPropertyName);
@@ -140,6 +191,7 @@ function buildTasks(board, cards, opts = {}) {
     const projectId = projectProp ? properties[projectProp.id] || null : null;
     const statusId = statusProp ? properties[statusProp.id] || null : null;
     const rawDeadline = deadlineProp ? properties[deadlineProp.id] : null;
+    const rawTimeDeadline = timeDeadlineProp ? properties[timeDeadlineProp.id] : null;
     const rawUrl = urlProp ? properties[urlProp.id] : null;
     const rawSmi = smiProp ? properties[smiProp.id] : null;
     const rawUvm = uvmProp ? properties[uvmProp.id] : null;
@@ -148,6 +200,7 @@ function buildTasks(board, cards, opts = {}) {
     const rawAssignee = assigneeProp ? properties[assigneeProp.id] : null;
 
     const deadline = parsePropertyDate(rawDeadline);
+    const hotDeadline = earliestDeadline(deadline, rawTimeDeadline);
     const pubUrl = rawUrl ? String(rawUrl).trim() : '';
     const reach = parseUvm(rawUvm);
 
@@ -168,6 +221,9 @@ function buildTasks(board, cards, opts = {}) {
       priority: priorityProp && rawPriority ? optionLabelById(priorityProp, rawPriority) : null,
       deadline,
       deadlineLabel: deadline ? deadlineLabel(deadline) : '',
+      timeDeadline: rawTimeDeadline ? String(rawTimeDeadline).trim() : '',
+      hotDeadline,
+      hot: isHotDue(daysToDeadline(hotDeadline)),
       pubUrl,
       isFact: !!pubUrl,
       uvm: reach,
@@ -181,6 +237,10 @@ function buildTasks(board, cards, opts = {}) {
   if (opts.statusFilter) {
     const needle = normLabel(opts.statusFilter);
     visibleTasks = visibleTasks.filter((t) => normLabel(t.status.label) === needle);
+  }
+  if (opts.statusAllowList && opts.statusAllowList.length) {
+    const allow = new Set(opts.statusAllowList.map(normLabel));
+    visibleTasks = visibleTasks.filter((t) => t.status && allow.has(normLabel(t.status.label)));
   }
 
   visibleTasks.sort((a, b) => {
@@ -264,4 +324,7 @@ module.exports = {
   assigneeOptions,
   parseUvm,
   displayReach,
+  normLabel,
+  daysToDeadline,
+  isHotDue,
 };

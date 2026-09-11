@@ -138,6 +138,32 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_scenario_idx ON search_logs (scenario_id);`);
   await pool.query(`ALTER TABLE search_logs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_project_idx ON search_logs (board_id, project_id, created_at);`);
+
+  // ACL — see src/acl.js. Two independent global privileges per team member
+  // (manage project cards vs. manage this ACL itself), plus a per-project
+  // access allow-list. A user with ZERO rows in team_project_access keeps
+  // seeing every project (today's behaviour, unchanged) — restriction is
+  // opt-in per user the moment an admin adds their first row.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS team_permissions (
+      board_id text NOT NULL,
+      user_id text NOT NULL,
+      can_manage_projects boolean NOT NULL DEFAULT false,
+      can_manage_acl boolean NOT NULL DEFAULT false,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (board_id, user_id)
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS team_project_access (
+      board_id text NOT NULL,
+      user_id text NOT NULL,
+      project_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (board_id, user_id, project_id)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS team_project_access_user_idx ON team_project_access (board_id, user_id);`);
 }
 
 module.exports = { pool, requirePool, initSchema };

@@ -27,8 +27,26 @@ const addSocialRow = document.getElementById('addSocialRow');
 const settingsCancelBtn = document.getElementById('settingsCancelBtn');
 const settingsSaveBtn = document.getElementById('settingsSaveBtn');
 
+const adminTabBar = document.getElementById('adminTabBar');
+const panelProjects = document.getElementById('panelProjects');
+const panelAcl = document.getElementById('panelAcl');
+const aclLoading = document.getElementById('aclLoading');
+const aclErrorBox = document.getElementById('aclErrorBox');
+const aclTableWrap = document.getElementById('aclTableWrap');
+const aclRowsEl = document.getElementById('aclRows');
+const aclEmpty = document.getElementById('aclEmpty');
+const accessModalOverlay = document.getElementById('accessModalOverlay');
+const accessModalTitle = document.getElementById('accessModalTitle');
+const accessProjectList = document.getElementById('accessProjectList');
+const accessCancelBtn = document.getElementById('accessCancelBtn');
+const accessSaveBtn = document.getElementById('accessSaveBtn');
+
 let currentProjects = [];
 let settingsProjectId = null;
+let currentAccess = null; // { admin, canManageProjects, canManageAcl } — from /api/team/me
+let aclUsers = [];
+let aclProjects = [];
+let accessModalUserId = null;
 
 function showToast(msg) {
   toast.textContent = msg;
@@ -279,4 +297,184 @@ settingsSaveBtn.addEventListener('click', async () => {
   }
 });
 
-load();
+// --- ACL: кто из команды что настраивает и какие проекты видит ---
+
+function setActiveAdminTab(tab) {
+  [...adminTabBar.children].forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  panelProjects.hidden = tab !== 'projects';
+  panelAcl.hidden = tab !== 'acl';
+  if (tab === 'projects') load();
+  else if (tab === 'acl') loadAcl();
+}
+
+adminTabBar.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab');
+  if (!btn || btn.hidden) return;
+  setActiveAdminTab(btn.dataset.tab);
+});
+
+function accessSummary(u) {
+  if (u.superAdmin) return 'Все проекты (супер-админ)';
+  if (!u.projectIds) return 'Все проекты';
+  if (!u.projectIds.length) return 'Все проекты';
+  return `Выбрано: ${u.projectIds.length} из ${aclProjects.length}`;
+}
+
+function aclRowHtml(u) {
+  const disabled = u.superAdmin ? ' disabled title="Супер-админ задан переменными окружения — всегда все права и все проекты."' : '';
+  return `
+    <tr>
+      <td><b>${esc(u.label)}</b>${u.superAdmin ? '<span class="badge-archived">супер-админ</span>' : ''}</td>
+      <td><label class="check-row" style="margin:0"><input type="checkbox" class="acl-perm" data-user="${esc(u.id)}" data-perm="canManageProjects"${u.canManageProjects ? ' checked' : ''}${disabled}></label></td>
+      <td><label class="check-row" style="margin:0"><input type="checkbox" class="acl-perm" data-user="${esc(u.id)}" data-perm="canManageAcl"${u.canManageAcl ? ' checked' : ''}${disabled}></label></td>
+      <td>
+        <div class="link-cell">
+          <span class="hint">${esc(accessSummary(u))}</span>
+          ${u.superAdmin ? '' : `<button type="button" class="mini-btn acl-access-btn" data-user="${esc(u.id)}">Настроить</button>`}
+        </div>
+      </td>
+    </tr>`;
+}
+
+function renderAcl() {
+  if (!aclUsers.length) {
+    aclEmpty.textContent = 'В команде пока никого нет.';
+    aclEmpty.hidden = false;
+    aclTableWrap.hidden = true;
+    return;
+  }
+  aclEmpty.hidden = true;
+  aclTableWrap.hidden = false;
+  aclRowsEl.innerHTML = aclUsers.map(aclRowHtml).join('');
+}
+
+async function loadAcl() {
+  aclLoading.hidden = false;
+  aclErrorBox.hidden = true;
+  aclTableWrap.hidden = true;
+  aclEmpty.hidden = true;
+  try {
+    const res = await fetch('/api/admin/acl');
+    if (res.status === 401) { window.location.href = '/team'; return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Не удалось загрузить список команды.');
+    aclUsers = data.users || [];
+    aclProjects = data.projects || [];
+    renderAcl();
+  } catch (err) {
+    aclErrorBox.textContent = err.message;
+    aclErrorBox.hidden = false;
+  } finally {
+    aclLoading.hidden = true;
+  }
+}
+
+aclRowsEl.addEventListener('change', async (e) => {
+  const cb = e.target.closest('.acl-perm');
+  if (!cb) return;
+  const userId = cb.dataset.user;
+  const user = aclUsers.find((u) => u.id === userId);
+  if (!user) return;
+  const perm = cb.dataset.perm; // 'canManageProjects' | 'canManageAcl'
+  const next = { canManageProjects: user.canManageProjects, canManageAcl: user.canManageAcl, [perm]: cb.checked };
+  cb.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/acl/${encodeURIComponent(userId)}/permissions`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Не удалось сохранить.');
+    user.canManageProjects = next.canManageProjects;
+    user.canManageAcl = next.canManageAcl;
+    showToast('Сохранено.');
+  } catch (err) {
+    cb.checked = !cb.checked;
+    showToast(err.message);
+  } finally {
+    cb.disabled = false;
+  }
+});
+
+aclRowsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('.acl-access-btn');
+  if (!btn) return;
+  openAccessModal(btn.dataset.user);
+});
+
+function openAccessModal(userId) {
+  const user = aclUsers.find((u) => u.id === userId);
+  if (!user) return;
+  accessModalUserId = userId;
+  accessModalTitle.textContent = `Доступ к проектам · ${user.label}`;
+  const selected = new Set(user.projectIds || []);
+  accessProjectList.innerHTML = aclProjects
+    .slice()
+    .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+    .map((p) => `<label class="status-filter-item"><input type="checkbox" data-project="${esc(p.id)}"${selected.has(p.id) ? ' checked' : ''}><span>${esc(p.label)}</span></label>`)
+    .join('');
+  accessModalOverlay.hidden = false;
+}
+
+function closeAccessModal() {
+  accessModalOverlay.hidden = true;
+  accessModalUserId = null;
+}
+
+accessCancelBtn.addEventListener('click', closeAccessModal);
+accessModalOverlay.addEventListener('click', (e) => { if (e.target === accessModalOverlay) closeAccessModal(); });
+
+accessSaveBtn.addEventListener('click', async () => {
+  if (!accessModalUserId) return;
+  const projectIds = [...accessProjectList.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.dataset.project);
+  accessSaveBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/acl/${encodeURIComponent(accessModalUserId)}/access`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectIds }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Не удалось сохранить.');
+    showToast('Доступ сохранён.');
+    closeAccessModal();
+    await loadAcl();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    accessSaveBtn.disabled = false;
+  }
+});
+
+// --- Инициализация: какие вкладки показывать зависит от прав сотрудника ---
+
+async function initAdmin() {
+  let access = {};
+  try {
+    const res = await fetch('/api/team/me');
+    if (res.status === 401) { window.location.href = '/team'; return; }
+    const data = await res.json();
+    access = data.access || {};
+  } catch (err) {
+    // A transient /me failure shouldn't blank the whole page — fall back to
+    // showing the projects tab, the more common privilege of the two.
+    access = { canManageProjects: true, canManageAcl: false };
+  }
+  currentAccess = access;
+  const canProjects = !!access.canManageProjects;
+  const canAcl = !!access.canManageAcl;
+  if (!canProjects && !canAcl) {
+    window.location.href = '/team';
+    return;
+  }
+  const tabButtons = [...adminTabBar.children];
+  const projectsBtn = tabButtons.find((b) => b.dataset.tab === 'projects');
+  const aclBtn = tabButtons.find((b) => b.dataset.tab === 'acl');
+  if (projectsBtn) projectsBtn.hidden = !canProjects;
+  if (aclBtn) aclBtn.hidden = !canAcl;
+  adminTabBar.hidden = !(canProjects && canAcl);
+  setActiveAdminTab(canProjects ? 'projects' : 'acl');
+}
+
+initAdmin();

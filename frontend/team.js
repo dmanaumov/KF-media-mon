@@ -31,6 +31,7 @@ function saveStatusFilter() {
 let currentTasks = [];
 let activeStatuses = null;
 let statusOptions = [];
+let lastTaskMeta = null; // meta ({projects,statuses,assignee}) from the last /tasks list load — reused to fill the create-task modal's selects
 let currentUser = null;
 let currentAccess = null;
 let calYear = null;
@@ -99,6 +100,7 @@ const mentionModalTitle = document.getElementById('mentionModalTitle');
 const mentionUrl = document.getElementById('mentionUrl');
 const mentionSource = document.getElementById('mentionSource');
 const mentionDate = document.getElementById('mentionDate');
+const mentionEventType = document.getElementById('mentionEventType');
 const mentionSentiment = document.getElementById('mentionSentiment');
 const mentionUrgent = document.getElementById('mentionUrgent');
 const mentionComment = document.getElementById('mentionComment');
@@ -200,11 +202,32 @@ function deadlineLabel(dateStr) {
   return `${+m[3]} ${MONTHS_RU[+m[2] - 1]}`;
 }
 
+// Days from today until the deadline (dates are plain YYYY-MM-DD, compared in UTC).
+// Returns null when absent/invalid, negative when the deadline already passed.
+function daysToDeadline(dateStr) {
+  const m = dateStr && dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const due = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const now = new Date();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((due - today) / 86400000);
+}
+
 // ==================== Project switcher ====================
 
 function projectLabelFor(id) {
   const p = projects.find((x) => x.id === id);
   return p ? p.label : '';
+}
+
+// Project dropdown options are prefixed to surface problems without opening
+// the tab: 🔥 when the project has any negative-sentiment mention (stronger
+// signal — real media risk), ⚠️ when it merely has a task due within 3 days
+// and no negative mentions. "Все проекты" gets the strongest prefix present
+// across the whole list so the aggregate view never hides an alert.
+function projectOptionLabel(p) {
+  const prefix = p.negative ? '🔥 ' : p.hot ? '⚠️ ' : '';
+  return `${prefix}${p.label}`;
 }
 
 async function loadProjects() {
@@ -217,12 +240,15 @@ async function loadProjects() {
   let saved = '';
   try { saved = localStorage.getItem(PROJECT_KEY) || ''; } catch (e) {}
   selectedProjectId = projects.some((p) => p.id === saved) ? saved : '';
+  const anyNegative = projects.some((p) => p.negative);
+  const anyHot = projects.some((p) => p.hot);
+  const allLabel = `${anyNegative ? '🔥 ' : anyHot ? '⚠️ ' : ''}Все проекты`;
   teamProjectSelect.innerHTML =
-    '<option value="">Все проекты</option>' +
+    `<option value="">${esc(allLabel)}</option>` +
     projects
       .slice()
       .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
-      .map((p) => `<option value="${esc(p.id)}"${p.id === selectedProjectId ? ' selected' : ''}>${esc(p.label)}</option>`)
+      .map((p) => `<option value="${esc(p.id)}"${p.id === selectedProjectId ? ' selected' : ''}>${esc(projectOptionLabel(p))}</option>`)
       .join('');
   await fetchMentionsForProject();
   setActiveTab('tasks');
@@ -334,17 +360,25 @@ statusFilterNone.addEventListener('click', () => {
 
 function taskCardHtml(t) {
   const chip = t.status && t.status.label ? `<span class="status ${statusClass(t.status.label)}">${esc(t.status.label)}</span>` : '';
+  // "Hot" uses the earliest of the two deadline fields (server-computed,
+  // t.hotDeadline) rather than the plain publication deadline, so a task
+  // still shows burning/overdue even when only "Время дедлайна (если
+  // применимо)" is set.
+  const due = daysToDeadline(t.hotDeadline || t.deadline);
+  const burning = due !== null && due >= 0 && due <= 3;
+  const overdue = due !== null && due < 0;
+  const cardClass = overdue ? 'card overdue task-card' : burning ? 'card burning task-card' : 'card task-card';
   const metaBits = [
     !selectedProjectId && t.project && t.project.label ? `${esc(t.project.label)}` : '',
     t.smi ? `📰 ${esc(t.smi)}` : '',
     t.type ? `${esc(t.type)}` : '',
     t.priority ? `⚑ ${esc(t.priority)}` : '',
     t.assignee && t.assignee.label ? `👤 ${esc(t.assignee.label)}` : '',
-    t.deadline ? `🗓 ${deadlineLabel(t.deadline)}` : '',
+    t.deadline ? `${burning || overdue ? '🔥 ' : ''}🗓 ${deadlineLabel(t.deadline)}` : '',
   ].filter(Boolean).join('  ·  ');
   const reach = t.uvm ? `Охват: <b>${formatReach(t.uvm)}</b>` : '';
   return `
-    <article class="card task-card" data-id="${esc(t.id)}">
+    <article class="${cardClass}" data-id="${esc(t.id)}">
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
@@ -389,6 +423,7 @@ async function loadTasks() {
     teamLoading.hidden = true;
     const statuses = (data.meta && data.meta.statuses) || [];
     statusOptions = statuses;
+    lastTaskMeta = data.meta || lastTaskMeta;
     if (!activeStatuses) {
       const saved = loadSavedStatusFilter();
       if (saved) {
@@ -455,13 +490,24 @@ function renderCalendar() {
     const dayTasks = byDate.get(dateStr) || [];
     const posts = dayTasks.map((t) => {
       const tip = [t.project && t.project.label, deadlineShort(t.deadline), t.status && t.status.label, t.title, t.smi && `📰 ${t.smi}`].filter(Boolean).join('\n');
-      return `<button type="button" class="cal-post" title="${esc(tip)}">${calMarkerHtml(t)}<span class="cal-post-title">${esc(t.title)}</span></button>`;
+      return `<button type="button" class="cal-post" data-id="${esc(t.id)}" title="${esc(tip)}">${calMarkerHtml(t)}<span class="cal-post-title">${esc(t.title)}</span></button>`;
     }).join('');
     const cls = `cal-day${inMonth ? '' : ' other-month'}${dateStr === todayStr ? ' today' : ''}`;
-    cells.push(`<div class="${cls}" data-date="${dateStr}"><div class="cal-day-num">${d.getUTCDate()}</div>${posts}</div>`);
+    cells.push(`<div class="${cls}" data-date="${dateStr}"><div class="cal-day-num">${d.getUTCDate()}</div>${posts}<button type="button" class="cal-day-add" data-date="${dateStr}" title="Добавить задачу на эту дату" aria-label="Добавить задачу">+</button></div>`);
   }
   teamCalendarGrid.innerHTML = cells.join('');
 }
+
+teamCalendarGrid.addEventListener('click', (e) => {
+  const addBtn = e.target.closest('.cal-day-add');
+  if (addBtn) {
+    e.stopPropagation();
+    openCreateTaskModal({ deadline: addBtn.dataset.date });
+    return;
+  }
+  const post = e.target.closest('.cal-post');
+  if (post && post.dataset.id) openTaskModal(post.dataset.id);
+});
 
 function updateCalendarToggleIcon(calendarOpen) {
   if (calendarOpen) {
@@ -511,8 +557,13 @@ const taskCommentInput = document.getElementById('taskCommentInput');
 const taskCommentSend = document.getElementById('taskCommentSend');
 const taskModalCancel = document.getElementById('taskModalCancel');
 const taskModalSave = document.getElementById('taskModalSave');
+const taskTextWrap = document.getElementById('taskTextWrap');
+const taskMediaWrap = document.getElementById('taskMediaWrap');
+const taskChatWrap = document.getElementById('taskChatWrap');
+const addTaskBtn = document.getElementById('addTaskBtn');
 
 let openTaskId = null;
+let taskModalMode = 'edit'; // 'edit' | 'create' — create mode posts a new card and has no id yet, so text/media/discussion are hidden until it exists
 
 function autoGrowTitle() {
   taskTitle.style.height = 'auto';
@@ -578,8 +629,16 @@ function fillTaskForm(detail, meta) {
   renderComments(detail.comments);
 }
 
+function setTaskModalCreateMode(isCreate) {
+  taskModalMode = isCreate ? 'create' : 'edit';
+  taskTextWrap.hidden = isCreate;
+  taskMediaWrap.hidden = isCreate;
+  taskChatWrap.hidden = isCreate;
+}
+
 async function openTaskModal(taskId) {
   openTaskId = taskId;
+  setTaskModalCreateMode(false);
   taskModalOverlay.hidden = false;
   taskModalBody.hidden = true;
   taskModalLoading.hidden = false;
@@ -597,20 +656,52 @@ async function openTaskModal(taskId) {
   }
 }
 
+// Create mode reuses the same modal/form but has no card yet — there's
+// nothing to fetch, so it skips the loading step and fills selects from the
+// meta of the last task list load (statuses/projects/assignees don't change
+// between opening the tab and clicking "+ Добавить задачу").
+function openCreateTaskModal(prefill) {
+  openTaskId = null;
+  setTaskModalCreateMode(true);
+  taskModalOverlay.hidden = false;
+  taskModalLoading.hidden = true;
+  taskModalBody.hidden = false;
+  taskModalSave.disabled = false;
+  const meta = lastTaskMeta || { statuses: statusOptions, projects, assignee: { options: [] } };
+  taskTitle.value = '';
+  autoGrowTitle();
+  fillSelect(taskStatus, meta.statuses, null, null);
+  fillSelect(taskProject, meta.projects, (prefill && prefill.projectId) || selectedProjectId || null, null);
+  fillSelect(taskAssignee, meta.assignee && meta.assignee.options, null, '—');
+  taskSmi.value = '';
+  taskDeadline.value = (prefill && prefill.deadline) || '';
+  taskUvm.value = '';
+  taskUrl.value = '';
+  taskText.value = '';
+  taskTitle.focus();
+}
+
 function closeTaskModal() {
   taskModalOverlay.hidden = true;
   openTaskId = null;
+  setTaskModalCreateMode(false);
 }
 
 taskModalClose.addEventListener('click', closeTaskModal);
 taskModalCancel.addEventListener('click', closeTaskModal);
 taskModalOverlay.addEventListener('click', (e) => { if (e.target === taskModalOverlay) closeTaskModal(); });
+addTaskBtn.addEventListener('click', () => openCreateTaskModal(null));
 
 taskModalSave.addEventListener('click', async () => {
-  if (!openTaskId) return;
+  if (taskModalMode === 'edit' && !openTaskId) return;
+  const title = taskTitle.value.trim();
+  if (taskModalMode === 'create' && !title) {
+    showToast('Введите название задачи.');
+    return;
+  }
   const uvmRaw = taskUvm.value.trim();
   const body = {
-    title: taskTitle.value.trim(),
+    title,
     statusId: taskStatus.value || null,
     projectId: taskProject.value || null,
     assigneeId: taskAssignee.value || null,
@@ -624,8 +715,13 @@ taskModalSave.addEventListener('click', async () => {
   const originalLabel = taskModalSave.textContent;
   taskModalSave.textContent = 'Сохраняем…';
   try {
-    await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`, { method: 'PATCH', body });
-    showToast('Карточка сохранена.');
+    if (taskModalMode === 'create') {
+      await teamApi('/tasks', { method: 'POST', body });
+      showToast('Задача создана.');
+    } else {
+      await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`, { method: 'PATCH', body });
+      showToast('Карточка сохранена.');
+    }
     closeTaskModal();
     loadTasks();
   } catch (err) {
@@ -704,8 +800,13 @@ async function fetchMentionsForProject() {
   updateWebBadge();
 }
 
+// Without a selected project, "СМИ" isn't fetched (it's a per-project
+// listing) — so the badge falls back to the alert counts the /projects
+// endpoint already aggregates board-wide, instead of silently reading 0.
 function updateWebBadge() {
-  const alerts = currentMentions.filter((m) => m.sentiment === 'negative' || m.urgent).length;
+  const alerts = selectedProjectId
+    ? currentMentions.filter((m) => m.sentiment === 'negative' || m.urgent).length
+    : projects.reduce((a, p) => a + (p.alerts || 0), 0);
   webAlertBadge.hidden = alerts === 0;
   webAlertBadge.textContent = alerts > 9 ? '9+' : String(alerts);
 }
@@ -725,6 +826,7 @@ function mentionCardHtml(m) {
   ].filter(Boolean).join('  ·  ');
   return `
     <article class="card mention-card${isAlert ? ' alert' : ''}" data-id="${m.id}">
+      <button type="button" class="mention-delete" title="Удалить упоминание" aria-label="Удалить">×</button>
       <div class="meta">
         <div class="meta-left">
           ${metaBits ? `<div class="eyebrow">${metaBits}</div>` : ''}
@@ -770,7 +872,23 @@ async function loadWebTab() {
   renderMentions();
 }
 
-webList.addEventListener('click', (e) => {
+webList.addEventListener('click', async (e) => {
+  const del = e.target.closest('.mention-delete');
+  if (del) {
+    e.stopPropagation();
+    const card = del.closest('.mention-card');
+    const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
+    if (!m || !selectedProjectId) return;
+    if (!window.confirm('Удалить это упоминание?')) return;
+    try {
+      await teamApi(`/mentions/${m.id}?project=${encodeURIComponent(selectedProjectId)}`, { method: 'DELETE' });
+      showToast('Упоминание удалено.');
+      await afterMentionsChanged();
+    } catch (err) {
+      showToast(err.message);
+    }
+    return;
+  }
   const card = e.target.closest('.mention-card');
   if (!card) return;
   const m = currentMentions.find((x) => String(x.id) === card.dataset.id);
@@ -783,6 +901,7 @@ function openMentionModal(mention) {
   mentionUrl.value = mention ? mention.url : '';
   mentionSource.value = mention ? mention.source : '';
   mentionDate.value = mention ? mention.publishedAt : '';
+  mentionEventType.value = mention ? (mention.eventType || 'news') : 'news';
   mentionSentiment.value = mention ? mention.sentiment : 'neutral';
   mentionUrgent.checked = mention ? mention.urgent : false;
   mentionComment.value = mention ? mention.comment : '';
@@ -812,6 +931,7 @@ mentionSaveBtn.addEventListener('click', async () => {
     url: mentionUrl.value.trim(),
     source: mentionSource.value.trim(),
     publishedAt: mentionDate.value || null,
+    eventType: mentionEventType.value,
     sentiment: mentionSentiment.value,
     urgent: mentionUrgent.checked,
     comment: mentionComment.value.trim(),
@@ -987,6 +1107,8 @@ const scnName = document.getElementById('scnName');
 const scnProject = document.getElementById('scnProject');
 const scnKeywords = document.getElementById('scnKeywords');
 const scnSources = document.getElementById('scnSources');
+const scnRegex = document.getElementById('scnRegex');
+const scnFeedUrl = document.getElementById('scnFeedUrl');
 const scnNegative = document.getElementById('scnNegative');
 const scnPositive = document.getElementById('scnPositive');
 const scnDays = document.getElementById('scnDays');
@@ -1009,6 +1131,8 @@ function openScenarioModal(scenario) {
   scnProject.value = scenario ? scenario.projectId : (selectedProjectId || '');
   scnKeywords.value = scenario ? (scenario.keywords || []).join(', ') : '';
   scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
+  scnRegex.value = scenario ? (scenario.regex || '') : '';
+  scnFeedUrl.value = scenario ? (scenario.feedUrl || '') : '';
   scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
   scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
   scenarioModalOverlay.hidden = false;
@@ -1170,6 +1294,8 @@ scnSave.addEventListener('click', async () => {
     sources: split(scnSources.value),
     negativeKeywords: split(scnNegative.value),
     positiveKeywords: split(scnPositive.value),
+    regex: scnRegex.value.trim(),
+    feedUrl: scnFeedUrl.value.trim(),
   };
   scnSave.disabled = true;
   try {

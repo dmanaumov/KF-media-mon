@@ -251,6 +251,39 @@ async function insertBlocks(boardId, blocks) {
   return asJsonOrThrow(res, `insertBlocks(${boardId})`);
 }
 
+// Create a new card on the board. `insertBlocks` (above) already handles
+// child blocks (comments/text/attachments) with the raw Block shape; a card
+// is the same insert but type:'card', parentId = the board itself, and its
+// properties live nested under fields.properties (not top-level — that's
+// only how the higher-level /cards read endpoint flattens it for display).
+// Unverified against this specific Focalboard instance — best-effort, same
+// caveat as uploadFile/getFile above; a wrong fields shape would surface as
+// a write failure, not silent data loss (nothing to overwrite yet).
+async function createCard(boardId, { title, properties } = {}) {
+  const now = Date.now();
+  const payload = [{
+    id: '',
+    boardId,
+    parentId: boardId,
+    schema: 1,
+    type: 'card',
+    title: title || '',
+    fields: {
+      properties: properties || {},
+      contentOrder: [],
+      icon: '',
+      isTemplate: false,
+    },
+    createAt: now,
+    updateAt: now,
+    deleteAt: 0,
+  }];
+  const result = await insertBlocks(boardId, payload);
+  const created = Array.isArray(result) ? result[0] : (result && Array.isArray(result.blocks) ? result.blocks[0] : null);
+  if (!created || !created.id) throw new Error('[mattermost] createCard: no block id in response');
+  return created;
+}
+
 // Team members, for the "Ответственный" (assignee) picker and for resolving
 // comment/card createdBy ids to display names. Uses the core Mattermost API
 // (not the boards/focalboard prefix).
@@ -315,6 +348,7 @@ module.exports = {
   getUserIdByUsername,
   patchBlock,
   insertBlocks,
+  createCard,
   listTeamMembers,
   uploadFile,
   getFile,
