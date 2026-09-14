@@ -107,6 +107,7 @@
           <div style="display:flex;gap:8px">
             <button type="button" class="btn approve small" id="addMentionBtn">+ Добавить упоминание</button>
             <button type="button" class="btn small" id="scenariosBtn">⚙ Сценарии поиска</button>
+            <button type="button" class="btn small" id="sourcesBtn">🌐 Источники</button>
             <button type="button" class="mini-icon-btn" id="searchLogsBtn" title="Логи поиска" aria-label="Логи поиска">🗒</button>
           </div>
         </div>
@@ -311,6 +312,54 @@
         <div class="loading" id="searchLogsLoading" hidden>Загружаем логи…</div>
         <div class="modal-actions" style="margin-top:14px">
           <button type="button" class="btn ghost" id="searchLogsCloseBtn">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка источников (база СМИ/сайтов) -->
+    <div class="modal-overlay" id="sourcesModalOverlay" hidden>
+      <div class="modal-card wide">
+        <div class="modal-title" style="margin-bottom:6px">Источники</div>
+        <div class="hint" style="margin:2px 0 4px">База СМИ/сайтов для мониторинга: ~20 ресурсов на клиента (проект). Без проекта — общий пул.</div>
+        <div class="sc-row" style="margin-bottom:10px">
+          <button type="button" class="btn approve small" id="addSourceBtn">+ Добавить источник</button>
+          <div style="display:flex;gap:8px;align-items:center;flex:1">
+            <input class="field-input" id="sourcesSearchInput" type="text" placeholder="Поиск по названию или адресу…" style="flex:1">
+          </div>
+        </div>
+        <div class="source-form" id="sourceForm" hidden>
+          <div class="sc-form-grid">
+            <input class="field-input" id="sourceName" type="text" placeholder="Название (например: Trans.ru)">
+            <input class="field-input" id="sourceUrl" type="text" placeholder="https://…">
+            <select class="field-input" id="sourceProject"><option value="">Общий пул (все проекты)</option></select>
+            <select class="field-input" id="sourceType">
+              <option value="smi">СМИ</option>
+              <option value="portal">Портал</option>
+              <option value="aggregator">Агрегатор</option>
+              <option value="telegram">Телеграм</option>
+              <option value="other">Другое</option>
+            </select>
+            <select class="field-input" id="sourceLang">
+              <option value="ru">RU</option>
+              <option value="en">EN</option>
+              <option value="other">Другой</option>
+            </select>
+            <input class="field-input" id="sourceRegion" type="text" placeholder="Регион (необязательно)">
+            <select class="field-input" id="sourceStatus">
+              <option value="active">Активен</option>
+              <option value="paused">На паузе</option>
+            </select>
+          </div>
+          <div class="modal-actions" style="margin-top:12px">
+            <button type="button" class="btn approve small" id="saveSourceBtn">Сохранить</button>
+            <button type="button" class="btn ghost small" id="cancelSourceBtn">Отмена</button>
+          </div>
+        </div>
+        <div class="loading" id="sourcesLoading" hidden>Загружаем источники…</div>
+        <div class="stack" id="sourcesList"></div>
+        <div class="empty" id="sourcesEmpty" hidden></div>
+        <div class="modal-actions" style="margin-top:14px">
+          <button type="button" class="btn ghost" id="sourcesCloseBtn">Закрыть</button>
         </div>
       </div>
     </div>

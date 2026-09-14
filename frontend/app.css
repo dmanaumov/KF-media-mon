@@ -180,6 +180,8 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .modal-card.wide{max-width:600px}
 .modal-title{font-weight:850;font-size:16px;margin-bottom:4px}
 .modal-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sc-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
 .check-row{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:13px;font-weight:700;color:var(--ink)}
 .check-row input{width:17px;height:17px;accent-color:var(--accent)}

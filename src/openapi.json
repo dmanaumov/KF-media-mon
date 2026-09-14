@@ -421,6 +421,67 @@
           "502": { "$ref": "#/components/responses/DbError" }
         }
       }
+    },
+    "/api/team/sources": {
+      "get": {
+        "tags": ["Кабинет команды"],
+        "summary": "Источники (база СМИ/сайтов, ядро ~20 ресурсов на клиента). Пустой projectId = общий пул.",
+        "parameters": [
+          { "name": "project", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Фильтр по проекту (возвращает и общие ресурсы)" },
+          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Поиск по названию/адресу" },
+          { "name": "status", "in": "query", "required": false, "schema": { "type": "string", "enum": ["active", "paused"] } },
+          { "name": "type", "in": "query", "required": false, "schema": { "type": "string", "enum": ["smi", "portal", "aggregator", "telegram", "other"] } },
+          { "name": "lang", "in": "query", "required": false, "schema": { "type": "string", "enum": ["ru", "en", "other"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список источников",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "sources": { "type": "array", "items": { "$ref": "#/components/schemas/Source" } } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Добавить источник",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SourceInput" } } } },
+        "responses": {
+          "200": { "description": "Созданный источник", "content": { "application/json": { "schema": { "type": "object", "properties": { "source": { "$ref": "#/components/schemas/Source" } } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/sources/{id}": {
+      "put": {
+        "tags": ["Кабинет команды"],
+        "summary": "Обновить источник",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SourceInput" } } } },
+        "responses": {
+          "200": { "description": "Обновлённый источник", "content": { "application/json": { "schema": { "type": "object", "properties": { "source": { "$ref": "#/components/schemas/Source" } } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      },
+      "delete": {
+        "tags": ["Кабинет команды"],
+        "summary": "Удалить источник",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Удалён", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
     }
   },
   "components": {
@@ -434,6 +495,7 @@
     "responses": {
       "Unauthorized": { "description": "Нет авторизации (неверный ключ автоматизации или отсутствует сессия)" },
       "BadRequest": { "description": "Ошибка запроса" },
+      "NotFound": { "description": "Не найдено" },
       "DbError": { "description": "Ошибка базы данных", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } },
       "MattermostError": { "description": "Mattermost недоступен", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } },
       "SearchFailed": { "description": "Ошибка при импорте/поиске", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } } } } } }
@@ -646,6 +708,35 @@
         }
       },
       "LoginRequest": { "type": "object", "required": ["login_id", "password"], "properties": { "login_id": { "type": "string" }, "password": { "type": "string" } } },
+      "Source": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "projectId": { "type": "string", "description": "ID проекта (пусто — общий пул)" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "type": { "type": "string", "enum": ["smi", "portal", "aggregator", "telegram", "other"], "default": "smi" },
+          "lang": { "type": "string", "enum": ["ru", "en", "other"], "default": "ru" },
+          "region": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "paused"], "default": "active" },
+          "createdBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SourceInput": {
+        "type": "object",
+        "required": ["name", "url"],
+        "properties": {
+          "projectId": { "type": "string" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "type": { "type": "string", "enum": ["smi", "portal", "aggregator", "telegram", "other"], "default": "smi" },
+          "lang": { "type": "string", "enum": ["ru", "en", "other"], "default": "ru" },
+          "region": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "paused"], "default": "active" }
+        },
+        "example": { "projectId": "a5amd6469y96drojnrf3ymiacpe", "name": "Trans.ru", "url": "https://trans.ru/news", "type": "smi", "lang": "ru", "region": "RU" }
+      },
       "MeResponse": {
         "type": "object",
         "properties": { "user": { "type": "object" }, "role": { "type": "object" }, "access": { "type": "object", "properties": { "admin": { "type": "boolean" }, "staffProjectsPath": { "type": "string" } } } }

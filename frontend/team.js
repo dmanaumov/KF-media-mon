@@ -47,6 +47,59 @@ let statsPeriod = (() => {
   try { return localStorage.getItem(PERIOD_KEY) || 'all'; } catch (e) { return 'all'; }
 })();
 
+// ==================== URL deep-linking ====================
+
+const VALID_TABS = new Set(['tasks', 'web', 'stats']);
+
+function readUrlState() {
+  let h = location.hash || '';
+  if (h.startsWith('#')) h = h.slice(1);
+  const idx = h.indexOf('?');
+  const tab = idx >= 0 ? h.slice(0, idx) : h;
+  const params = new URLSearchParams(idx >= 0 ? h.slice(idx + 1) : '');
+  return {
+    tab: VALID_TABS.has(tab) ? tab : null,
+    project: params.get('project') || '',
+  };
+}
+
+function syncUrl() {
+  let h = `#${activeTab}`;
+  if (selectedProjectId) h += `?project=${encodeURIComponent(selectedProjectId)}`;
+  if (location.hash !== h) {
+    history.replaceState(null, '', h);
+  }
+}
+
+function applyUrlState() {
+  const state = readUrlState();
+  const targetProject = (state.project && projects.some((p) => p.id === state.project)) ? state.project : '';
+  if (targetProject) {
+    selectedProjectId = targetProject;
+    try { localStorage.setItem(PROJECT_KEY, targetProject); } catch (e) {}
+    teamProjectSelect.value = targetProject;
+  }
+  if (state.tab && (state.tab !== 'web' || selectedProjectId) && (state.tab !== 'stats' || selectedProjectId)) {
+    setActiveTab(state.tab);
+  } else if (state.tab) {
+    showToast('Сначала выберите проект в списке выше.');
+    setActiveTab('tasks');
+  } else {
+    setActiveTab(activeTab);
+  }
+  syncUrl();
+}
+
+function onHashChange() {
+  const state = readUrlState();
+  if (state.tab && state.tab !== activeTab) applyUrlState();
+  else if (state.project && state.project !== selectedProjectId) applyUrlState();
+}
+
+window.addEventListener('hashchange', onHashChange);
+
+// ==================== DOM refs ====================
+
 const loginApp = document.getElementById('loginApp');
 const teamApp = document.getElementById('teamApp');
 const loginLogin = document.getElementById('loginLogin');
@@ -251,7 +304,7 @@ async function loadProjects() {
       .map((p) => `<option value="${esc(p.id)}"${p.id === selectedProjectId ? ' selected' : ''}>${esc(projectOptionLabel(p))}</option>`)
       .join('');
   await fetchMentionsForProject();
-  setActiveTab('tasks');
+  applyUrlState();
 }
 
 teamProjectSelect.addEventListener('change', async () => {
@@ -264,6 +317,7 @@ teamProjectSelect.addEventListener('change', async () => {
     if (!scenariosPanel.hidden) renderScenariosPanel(scenariosPanel);
   }
   else if (activeTab === 'stats') loadStatsTab();
+  syncUrl();
 });
 
 // ==================== Tabs ====================
@@ -291,6 +345,7 @@ function setActiveTab(tab) {
   else if (tab === 'web') loadWebTab();
   else if (tab === 'stats') loadStatsTab();
   if (tab !== 'web') hideScenariosPanel();
+  syncUrl();
 }
 
 // ==================== Текущие задачи ====================
@@ -1310,6 +1365,184 @@ scnSave.addEventListener('click', async () => {
     showToast(err.message);
   } finally {
     scnSave.disabled = false;
+  }
+});
+
+// ==================== Источники (база СМИ/сайтов) ====================
+
+let currentSources = [];
+let editingSourceId = null;
+let sourceFetchTimer = null;
+const sourcesBtn = document.getElementById('sourcesBtn');
+const sourcesModalOverlay = document.getElementById('sourcesModalOverlay');
+const sourcesCloseBtn = document.getElementById('sourcesCloseBtn');
+const addSourceBtn = document.getElementById('addSourceBtn');
+const saveSourceBtn = document.getElementById('saveSourceBtn');
+const cancelSourceBtn = document.getElementById('cancelSourceBtn');
+const sourcesSearchInput = document.getElementById('sourcesSearchInput');
+const sourceForm = document.getElementById('sourceForm');
+const sourcesList = document.getElementById('sourcesList');
+const sourcesEmpty = document.getElementById('sourcesEmpty');
+const sourcesLoading = document.getElementById('sourcesLoading');
+const sourceName = document.getElementById('sourceName');
+const sourceUrl = document.getElementById('sourceUrl');
+const sourceProject = document.getElementById('sourceProject');
+const sourceType = document.getElementById('sourceType');
+const sourceLang = document.getElementById('sourceLang');
+const sourceRegion = document.getElementById('sourceRegion');
+const sourceStatus = document.getElementById('sourceStatus');
+
+const SOURCE_TYPE_LABEL = { smi: 'СМИ', portal: 'Портал', aggregator: 'Агрегатор', telegram: 'Телеграм', other: 'Другое' };
+const SOURCE_STATUS_LABEL = { active: 'Активен', paused: 'На паузе' };
+
+function fillSourceProjectSelect() {
+  const selected = sourceProject.value || selectedProjectId || '';
+  sourceProject.innerHTML = '<option value="">Общий пул (все проекты)</option>' +
+    projects.slice().sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+      .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  sourceProject.value = selected;
+}
+
+function openSourceForm(source) {
+  editingSourceId = source ? source.id : null;
+  fillSourceProjectSelect();
+  if (source) {
+    sourceName.value = source.name || '';
+    sourceUrl.value = source.url || '';
+    sourceProject.value = source.projectId || '';
+    sourceType.value = source.type || 'smi';
+    sourceLang.value = source.lang || 'ru';
+    sourceRegion.value = source.region || '';
+    sourceStatus.value = source.status || 'active';
+  } else {
+    sourceName.value = '';
+    sourceUrl.value = '';
+    sourceType.value = 'smi';
+    sourceLang.value = 'ru';
+    sourceRegion.value = '';
+    sourceStatus.value = 'active';
+  }
+  sourceForm.hidden = false;
+  sourceName.focus();
+}
+
+function closeSourceForm() {
+  sourceForm.hidden = true;
+  editingSourceId = null;
+}
+
+async function loadSources() {
+  const qs = [];
+  if (selectedProjectId) qs.push(`project=${encodeURIComponent(selectedProjectId)}`);
+  if (sourcesSearchInput.value.trim()) qs.push(`q=${encodeURIComponent(sourcesSearchInput.value.trim())}`);
+  try {
+    const data = await teamApi(`/sources${qs.length ? '?' + qs.join('&') : ''}`);
+    currentSources = data.sources || [];
+  } catch (err) {
+    currentSources = [];
+    showToast('Не удалось загрузить источники: ' + err.message);
+  }
+}
+
+function renderSources() {
+  sourcesList.innerHTML = currentSources.map((s) => `
+    <div class="scenario-row">
+      <div class="scenario-row-main">
+        <div class="scenario-name">${esc(s.name || 'Без названия')}</div>
+        <div class="scenario-meta">${esc(s.url || '')}</div>
+        <div class="scenario-meta" style="margin-top:4px">
+          ${projectLabelFor(s.projectId) || 'Общий пул'} · ${SOURCE_TYPE_LABEL[s.type] || s.type} · ${String(s.lang).toUpperCase()}${s.region ? ' · ' + esc(s.region) : ''}
+          ${s.status === 'paused' ? ' · <span class="badge-archived">на паузе</span>' : ''}
+        </div>
+      </div>
+      <div class="scenario-actions">
+        <button type="button" class="scenario-act-btn" data-edit-source="${s.id}" title="Изменить">✏️</button>
+        <button type="button" class="scenario-act-btn danger" data-del-source="${s.id}" title="Удалить">🗑️</button>
+      </div>
+    </div>`).join('') || '';
+  sourcesEmpty.hidden = currentSources.length > 0;
+  if (!currentSources.length) {
+    sourcesEmpty.textContent = selectedProjectId
+      ? 'Для этого проекта пока нет источников. Добавьте ядро СМИ (~20 ресурсов).'
+      : 'Источников пока нет. Добавьте первый — он попадёт в общий пул.';
+  }
+}
+
+async function openSourcesModal() {
+  sourcesModalOverlay.hidden = false;
+  sourcesLoading.hidden = false;
+  sourcesList.innerHTML = '';
+  sourcesEmpty.hidden = true;
+  await loadSources();
+  sourcesLoading.hidden = true;
+  renderSources();
+}
+
+function closeSourcesModal() {
+  sourcesModalOverlay.hidden = true;
+  closeSourceForm();
+}
+
+sourcesBtn.addEventListener('click', openSourcesModal);
+sourcesCloseBtn.addEventListener('click', closeSourcesModal);
+sourcesModalOverlay.addEventListener('click', (e) => { if (e.target === sourcesModalOverlay) closeSourcesModal(); });
+addSourceBtn.addEventListener('click', () => openSourceForm(null));
+cancelSourceBtn.addEventListener('click', closeSourceForm);
+
+sourcesSearchInput.addEventListener('input', () => {
+  clearTimeout(sourceFetchTimer);
+  sourceFetchTimer = setTimeout(async () => {
+    sourcesLoading.hidden = false;
+    await loadSources();
+    sourcesLoading.hidden = true;
+    renderSources();
+  }, 250);
+});
+
+saveSourceBtn.addEventListener('click', async () => {
+  const body = {
+    projectId: sourceProject.value || '',
+    name: sourceName.value.trim(),
+    url: sourceUrl.value.trim(),
+    type: sourceType.value,
+    lang: sourceLang.value,
+    region: sourceRegion.value.trim(),
+    status: sourceStatus.value,
+  };
+  if (!body.name) { showToast('Укажите название источника.'); return; }
+  if (!body.url) { showToast('Укажите адрес сайта.'); return; }
+  saveSourceBtn.disabled = true;
+  try {
+    const path = editingSourceId ? `/sources/${editingSourceId}` : '/sources';
+    await teamApi(path, { method: editingSourceId ? 'PUT' : 'POST', body });
+    showToast('Источник сохранён.');
+    closeSourceForm();
+    await loadSources();
+    renderSources();
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    saveSourceBtn.disabled = false;
+  }
+});
+
+sourcesList.addEventListener('click', async (e) => {
+  const edit = e.target.closest('[data-edit-source]');
+  const del = e.target.closest('[data-del-source]');
+  if (edit) {
+    const s = currentSources.find((x) => String(x.id) === edit.dataset.editSource);
+    if (s) openSourceForm(s);
+    return;
+  }
+  if (del && confirm('Удалить источник из базы?')) {
+    try {
+      await teamApi(`/sources/${del.dataset.delSource}`, { method: 'DELETE' });
+      showToast('Источник удалён.');
+      await loadSources();
+      renderSources();
+    } catch (err) {
+      showToast(err.message);
+    }
   }
 });
 

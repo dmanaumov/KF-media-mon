@@ -12,6 +12,7 @@ const mentions = require('./mentions');
 const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOptions, findPropertyDef, normLabel } = require('./taskMapper');
 const scenarios = require('./scenarios');
 const searchLogs = require('./searchLogs');
+const sources = require('./sources');
 const acl = require('./acl');
 
 const app = express();
@@ -829,6 +830,80 @@ app.delete('/api/team/search-scenarios/:id', teamAuth.requireTeamAuth, async (re
     res.json({ ok: true });
   } catch (err) {
     console.error('[api] /api/team/search-scenarios DELETE failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// --- Team cabinet: media sources / sites library ---
+// A project ("клиент") keeps its core of ~20 media outlets here. Sources with
+// an empty projectId are a shared pool usable by any project.
+app.get('/api/team/sources', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const q = {
+      project: String(req.query.project || ''),
+      q: String(req.query.q || ''),
+      status: String(req.query.status || ''),
+      type: String(req.query.type || ''),
+      lang: String(req.query.lang || ''),
+    };
+    const list = await sources.listSources(config.mattermostBoardId, q);
+    const visible = await narrowByAccess(req.teamSession.user, list, (s) => s.projectId);
+    res.json({ sources: visible });
+  } catch (err) {
+    console.error('[api] /api/team/sources GET failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.post('/api/team/sources', teamAuth.requireTeamAuth, async (req, res) => {
+  const body = req.body || {};
+  const projectId = String(body.projectId || '').trim();
+  if (projectId && !(await requireProjectAccess(req, res, projectId))) return;
+  if (!String(body.name || '').trim()) return res.status(400).json({ error: 'missing_name', message: 'Укажите название источника.' });
+  if (!String(body.url || '').trim()) return res.status(400).json({ error: 'missing_url', message: 'Укажите адрес сайта.' });
+  try {
+    const user = (req.teamSession && req.teamSession.user) || {};
+    const s = await sources.createSource(config.mattermostBoardId, body, user.username || user.email || '');
+    res.json({ source: s });
+  } catch (err) {
+    console.error('[api] /api/team/sources POST failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.put('/api/team/sources/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'bad_id', message: 'Некорректный id.' });
+  try {
+    const current = await sources.listSources(config.mattermostBoardId, {});
+    const cur = current.find((s) => s.id === id);
+    if (!cur) return res.status(404).json({ error: 'not_found', message: 'Источник не найден.' });
+    const body = req.body || {};
+    const newProjectId = String(body.projectId === undefined ? cur.projectId : body.projectId).trim();
+    if (newProjectId !== cur.projectId && !(await requireProjectAccess(req, res, newProjectId))) return;
+    if (cur.projectId && !(await requireProjectAccess(req, res, cur.projectId))) return;
+    const s = await sources.updateSource(config.mattermostBoardId, id, body);
+    if (!s) return res.status(404).json({ error: 'not_found', message: 'Источник не найден.' });
+    res.json({ source: s });
+  } catch (err) {
+    console.error('[api] /api/team/sources PUT failed:', err.message);
+    res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+app.delete('/api/team/sources/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'bad_id', message: 'Некорректный id.' });
+  try {
+    const current = await sources.listSources(config.mattermostBoardId, {});
+    const cur = current.find((s) => s.id === id);
+    if (!cur) return res.status(404).json({ error: 'not_found', message: 'Источник не найден.' });
+    if (cur.projectId && !(await requireProjectAccess(req, res, cur.projectId))) return;
+    const ok = await sources.deleteSource(config.mattermostBoardId, id);
+    if (!ok) return res.status(404).json({ error: 'not_found', message: 'Источник не найден.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[api] /api/team/sources DELETE failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
 });

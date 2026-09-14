@@ -139,6 +139,29 @@ async function initSchema() {
   await pool.query(`ALTER TABLE search_logs ADD COLUMN IF NOT EXISTS project_id text NOT NULL DEFAULT '';`);
   await pool.query(`CREATE INDEX IF NOT EXISTS search_logs_project_idx ON search_logs (board_id, project_id, created_at);`);
 
+  // Media sources / sites — a reusable library of media outlets and portals.
+  // Each project ("клиент") gets its own core of ~20 sources; the same source
+  // can serve several scenarios. Referenced from scenarios by id (next step);
+  // managed in the team cabinet under "Источники".
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sources (
+      id bigserial PRIMARY KEY,
+      board_id text NOT NULL,
+      project_id text NOT NULL DEFAULT '',
+      name text NOT NULL DEFAULT '',
+      url text NOT NULL DEFAULT '',
+      type text NOT NULL DEFAULT 'smi',
+      lang text NOT NULL DEFAULT 'ru',
+      region text NOT NULL DEFAULT '',
+      status text NOT NULL DEFAULT 'active',
+      created_by text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS sources_board_idx ON sources (board_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS sources_project_idx ON sources (board_id, project_id);`);
+
   // ACL — see src/acl.js. Two independent global privileges per team member
   // (manage project cards vs. manage this ACL itself), plus a per-project
   // access allow-list. A user with ZERO rows in team_project_access keeps
