@@ -4,6 +4,7 @@
 // we decode and parse into mention-shaped items.
 
 const config = require('./config');
+const log = require('./logger');
 
 const SEARCH_API_URL = 'https://searchapi.api.cloud.yandex.net/v2/web/search';
 const SEARCH_TYPE = 'SEARCH_TYPE_RU';
@@ -22,20 +23,21 @@ async function search(queryText, { page = 0, timeoutMs = 30000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(SEARCH_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Api-Key ${config.yandexSearchApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: { searchType: SEARCH_TYPE, queryText, page: Number(page) || 0 },
-        folderId: config.yandexSearchFolderId,
-        responseFormat: 'FORMAT_XML',
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36',
-      }),
-      signal: controller.signal,
-    });
+const res = await fetch(SEARCH_API_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Api-Key ${config.yandexSearchApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: { searchType: SEARCH_TYPE, queryText, page: Number(page) || 0 },
+          folderId: config.yandexSearchFolderId,
+          responseFormat: 'FORMAT_XML',
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36',
+        }),
+        signal: controller.signal,
+      });
+      log.debug('yandex', `search "${queryText}" page=${page} → HTTP ${res.status}`);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       const err = new Error(`Yandex Search API ${res.status}: ${text.slice(0, 300)}`);

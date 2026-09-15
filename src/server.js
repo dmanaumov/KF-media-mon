@@ -14,6 +14,7 @@ const scenarios = require('./scenarios');
 const searchLogs = require('./searchLogs');
 const sources = require('./sources');
 const yandexSearch = require('./yandexSearch');
+const log = require('./logger');
 const acl = require('./acl');
 
 const app = express();
@@ -795,9 +796,11 @@ async function runScenarioViaYandex(s, pages = 1) {
   };
   try {
     const query = buildYandexQueryText(s) || s.name || 'запрос';
+    log.debug('yandex-run', `scenario="${s.name}" query="${query}" pages=${pages}`);
     const all = [];
     for (let p = 0; p < pages; p++) {
       const xml = await yandexSearch.search(query, { page: p });
+      log.debug('yandex-run', `page ${p}: xml length=${xml.length}, preview=${xml.slice(0, 500)}`);
       all.push(...yandexSearch.parseXmlResults(xml));
     }
     entry.found = all.length;
