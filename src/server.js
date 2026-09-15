@@ -773,7 +773,11 @@ function filterYandexResults(results, s) {
     try { re = new RegExp(s.regex.replace(/^\/(.*)\/$/, '$1'), 'i'); } catch (e) { re = null; }
   }
   const neg = (s.negativeKeywords || []).map((k) => k.toLowerCase()).filter(Boolean);
+  const days = Number.isInteger(s.daysRange) && s.daysRange > 0 ? s.daysRange : 30;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   return results.filter((r) => {
+    if (!r.modtime) return false;
+    if (r.modtime.getTime() < cutoff) return false;
     const hay = ((r.title || '') + ' ' + (r.snippet || '')).toLowerCase();
     if (re && !re.test((r.title || '') + ' ' + (r.snippet || ''))) return false;
     if (neg.some((k) => hay.includes(k))) return false;

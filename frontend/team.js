@@ -1188,6 +1188,7 @@ function openScenarioModal(scenario) {
   scnSources.value = scenario ? (scenario.sources || []).join(', ') : '';
   scnRegex.value = scenario ? (scenario.regex || '') : '';
   scnFeedUrl.value = scenario ? (scenario.feedUrl || '') : '';
+  scnDays.value = scenario ? (scenario.daysRange || 30) : 30;
   scnNegative.value = scenario ? (scenario.negativeKeywords || []).join(', ') : '';
   scnPositive.value = scenario ? (scenario.positiveKeywords || []).join(', ') : '';
   scenarioModalOverlay.hidden = false;
@@ -1313,6 +1314,7 @@ scenariosPanel.addEventListener('click', async (e) => {
           positiveKeywords: s.positiveKeywords || [],
           regex: s.regex || '',
           feedUrl: s.feedUrl || '',
+          daysRange: s.daysRange || 30,
         },
       });
       showToast('Сценарий продублирован.');
@@ -1339,6 +1341,7 @@ scenariosPanel.addEventListener('click', async (e) => {
           positiveKeywords: s.positiveKeywords || [],
           regex: s.regex || '',
           feedUrl: s.feedUrl || '',
+          daysRange: s.daysRange || 30,
           archived: !s.archived,
         },
       });
@@ -1378,6 +1381,7 @@ scnSave.addEventListener('click', async () => {
     positiveKeywords: split(scnPositive.value),
     regex: scnRegex.value.trim(),
     feedUrl: scnFeedUrl.value.trim(),
+    daysRange: parseInt(scnDays.value, 10) || 30,
   };
   scnSave.disabled = true;
   try {

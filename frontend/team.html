@@ -286,6 +286,9 @@
             <input class="field-input" id="scnPositive" type="text" placeholder="рост, победа, лидер…">
           </div>
         </div>
+        <div class="field-label">Период поиска, дней</div>
+        <input class="field-input" id="scnDays" type="number" min="1" max="365" value="30">
+        <div class="hint" style="margin:2px 0 0">Из выдачи остаются только страницы не старше этого срока (по дате страницы в индексе Яндекса). «24 часа» = 1 день, «30 дней» = отладка.</div>
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="scnCancel">Отмена</button>
           <button type="button" class="btn approve" id="scnSave">Сохранить</button>

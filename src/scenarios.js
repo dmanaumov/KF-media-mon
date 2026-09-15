@@ -21,6 +21,7 @@ function rowToScenario(row) {
     positiveKeywords: toArray(row.positive_keywords),
     regex: row.regex || '',
     feedUrl: row.feed_url || '',
+    daysRange: Number.isInteger(row.days_range) && row.days_range > 0 ? row.days_range : 30,
     archived: !!row.archived,
     createdBy: row.created_by || '',
     updatedAt: row.updated_at,
@@ -49,9 +50,10 @@ async function getScenario(id, boardId) {
 
 async function createScenario(boardId, projectId, data, createdBy) {
   const pool = db.requirePool();
+  const daysRange = Math.max(1, Math.min(parseInt(data.daysRange, 10) || 30, 365));
   const { rows } = await pool.query(
-    `INSERT INTO search_scenarios (board_id, project_id, name, keywords, sources, negative_keywords, positive_keywords, regex, feed_url, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    `INSERT INTO search_scenarios (board_id, project_id, name, keywords, sources, negative_keywords, positive_keywords, regex, feed_url, days_range, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
     [
       boardId,
       projectId,
@@ -62,6 +64,7 @@ async function createScenario(boardId, projectId, data, createdBy) {
       toArray(data.positiveKeywords).slice(0, 50).map((s) => s.slice(0, 200)),
       String(data.regex || '').trim().slice(0, 1000),
       String(data.feedUrl || '').trim().slice(0, 1000),
+      daysRange,
       String(createdBy || '').slice(0, 200),
     ]
   );
@@ -70,6 +73,7 @@ async function createScenario(boardId, projectId, data, createdBy) {
 
 async function updateScenario(id, boardId, data) {
   const pool = db.requirePool();
+  const daysRange = Math.max(1, Math.min(parseInt(data.daysRange, 10) || 30, 365));
   const { rows } = await pool.query(
     `UPDATE search_scenarios SET
        project_id = $10,
@@ -80,6 +84,7 @@ async function updateScenario(id, boardId, data) {
        positive_keywords = $7::text[],
        regex = $8,
        feed_url = $11,
+       days_range = $12,
        archived = $9,
        updated_at = now()
      WHERE id = $1 AND board_id = $2
@@ -96,6 +101,7 @@ async function updateScenario(id, boardId, data) {
       !!data.archived,
       String(data.projectId || '').slice(0, 100),
       String(data.feedUrl || '').trim().slice(0, 1000),
+      daysRange,
     ]
   );
   return rows[0] ? rowToScenario(rows[0]) : null;
