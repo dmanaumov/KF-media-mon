@@ -35,6 +35,8 @@ module.exports = {
   requestTimeoutMs: parseInt(process.env.MM_REQUEST_TIMEOUT_MS || '15000', 10),
   debug: (process.env.DEBUG_MATTERMOST || 'false').toLowerCase() === 'true',
   automationApiKey: process.env.AUTOMATION_API_KEY || '',
+  yandexSearchApiKey: process.env.YANDEX_SEARCH_API_KEY || '',
+  yandexSearchFolderId: process.env.YANDEX_SEARCH_FOLDER_ID || '',
 
   databaseUrl: process.env.DATABASE_URL || '',
 
