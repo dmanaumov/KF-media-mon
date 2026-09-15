@@ -251,6 +251,19 @@
         "summary": "Запустить сценарий прямо сейчас (кнопка «Запустить сейчас»)",
         "description": "Выполняет поиск по сценарию через Yandex Search API (нужен ключ в env сервера), сохраняет новые упоминания и пишет запись в «Логи поиска».",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pages": { "type": "integer", "minimum": 1, "maximum": 10, "default": 5, "description": "Сколько страниц выдачи перебрать (10 групп на страницу)." }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": { "description": "Результат запуска", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" }, "run": { "$ref": "#/components/schemas/SearchRunEntry" } } } } } },
           "400": { "$ref": "#/components/responses/BadRequest" },

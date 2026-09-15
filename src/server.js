@@ -1060,7 +1060,8 @@ app.post('/api/team/search-run/:id', teamAuth.requireTeamAuth, async (req, res) 
     if (!yandexSearch.isConfigured()) {
       return res.status(400).json({ error: 'yandex_not_configured', message: 'Yandex Search API не настроен (нет ключа в переменных окружения).' });
     }
-    const entry = await runScenarioViaYandex(s, 1);
+    const pages = Math.max(1, Math.min(Number((req.body || {}).pages) || 5, 10));
+    const entry = await runScenarioViaYandex(s, pages);
     if (entry.status === 'error') {
       res.json({ ok: false, run: entry });
     } else {

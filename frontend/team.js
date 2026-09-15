@@ -1213,13 +1213,14 @@ function renderScenariosPanel(container) {
   }
   container.innerHTML =
     '<div class="scenarios-header"><div class="scenarios-title">Сценарии поиска</div>' +
-    '<div style="display:flex;gap:8px"><button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
+    '<div style="display:flex;gap:8px;align-items:center"><span class="gm" title="Сколько страниц выдачи перебрать при ручном запуске (10 групп на страницу)">страниц</span><select id="scenRunPages" class="field-input" style="width:70px"><option value="1">1</option><option value="3">3</option><option value="5" selected>5</option><option value="10">10</option></select>' +
+    '<button type="button" class="btn approve small" id="addScenarioBtn">+ Создать</button>' +
     '<button type="button" class="icon-btn" data-close-scenarios>×</button></div></div>' +
     list.map((s) => `
       <div class="scenario-row${s.archived ? ' is-archived' : ''}">
         <div class="scenario-row-main">
           <div class="scenario-name">${esc(s.name || 'Без названия')}${s.archived ? '<span class="badge-archived">деактивирован</span>' : ''}</div>
-          <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.days ? ' · последние ' + s.days + ' дн.' : ''}</div>
+          <div class="scenario-meta">${esc(projectLabelFor(s.projectId) || s.projectId)}${s.daysRange ? ' · последние ' + s.daysRange + ' дн.' : ''}</div>
           ${tagChips(s.keywords)}
           ${tagChips(s.negativeKeywords, 'neg')}
           ${tagChips(s.positiveKeywords, 'pos')}
@@ -1276,8 +1277,10 @@ scenariosPanel.addEventListener('click', async (e) => {
     btn.disabled = true;
     btn.textContent = '…';
     try {
-      showToast('Запускаем поиск…');
-      const data = await teamApi(`/search-run/${s.id}`, { method: 'POST' });
+      const pagesSel = document.getElementById('scenRunPages');
+      const pages = pagesSel ? parseInt(pagesSel.value, 10) || 1 : 1;
+      showToast(`Запускаем поиск (${pages} стр. выдачи)…`);
+      const data = await teamApi(`/search-run/${s.id}`, { method: 'POST', body: { pages } });
       const entry = data && data.run;
       if (entry && entry.status === 'error') showToast('Ошибка: ' + (entry.note || 'неизвестно'));
       else showToast(entry.note || 'Запуск выполнен.');
