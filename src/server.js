@@ -764,7 +764,11 @@ function buildYandexQueryText(s) {
     .filter(Boolean)
     .map((d) => (d.startsWith('site:') ? d : `site:${d}`))
     .join(' ');
-  return [kw, sites].filter(Boolean).join(' ');
+  const days = Number.isInteger(s.daysRange) && s.daysRange > 0 ? s.daysRange : 30;
+  const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateOp = `date:>${start.getUTCFullYear()}${pad(start.getUTCMonth() + 1)}${pad(start.getUTCDate())}`;
+  return [kw, sites, 'lang:ru', dateOp].filter(Boolean).join(' ');
 }
 
 function filterYandexResults(results, s) {

@@ -571,7 +571,7 @@
           "positiveKeywords": { "type": "array", "items": { "type": "string" } },
           "regex": { "type": "string", "description": "Регулярное выражение (регистронезависимое), применяется к заголовку и описанию уже найденных результатов — оставляет только совпадения. Если пусто — берутся все найденные.", "example": "(?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)" },
           "feedUrl": { "type": "string", "description": "URL поиска/источника, передаётся автоматизации как есть (ежесуточно). Яндекс, Google, RSS/API-лента. Если указан — автоматизация тянет этот URL напрямую вместо запроса из query/keywords.", "example": "https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&lr=213&within=1" },
-          "daysRange": { "type": "integer", "description": "Период поиска в днях: из выдачи остаются только страницы не старше этого срока (по modtime).", "example": 30 },
+          "daysRange": { "type": "integer", "description": "Период поиска в днях: добавляется оператор date:>ГГГГММДД в запрос к Яндексу (только страницы не старше срока) плюс отсев по modtime после выдачи.", "example": 30 },
           "archived": { "type": "boolean" },
           "createdBy": { "type": "string" },
           "updatedAt": { "type": "string" }
@@ -594,7 +594,7 @@
           "positiveKeywords": { "type": "array", "items": { "type": "string" } },
           "regex": { "type": "string", "description": "Регулярное выражение (регистронезависимое), применяется к заголовку и описанию найденных результатов — оставляет только совпадения.", "example": "(?:КЛЕВЕРСПОРТ|Клевер[- ]?Спорт)" },
           "feedUrl": { "type": "string", "description": "URL поиска/источника, передаётся автоматизации как есть (ежесуточно). Годится Яндекс, Google, RSS/API-лента. Если указан — автоматизация тянет этот URL напрямую вместо составления запроса из query/keywords.", "example": "https://yandex.ru/search/?text=%D0%9A%D0%9B%D0%95%D0%92%D0%95%D0%A0%D0%A1%D0%9F%D0%9E%D0%A0%D0%A2&within=1" },
-          "daysRange": { "type": "integer", "description": "Период поиска в днях: из выдачи остаются только страницы не старше этого срока (по modtime).", "example": 30 },
+          "daysRange": { "type": "integer", "description": "Период поиска в днях: добавляется оператор date:>ГГГГММДД в запрос к Яндексу (только страницы не старше срока) плюс отсев по modtime после выдачи.", "example": 30 },
           "archived": { "type": "boolean" }
         }
       },
