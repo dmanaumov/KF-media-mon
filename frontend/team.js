@@ -1225,6 +1225,7 @@ function renderScenariosPanel(container) {
           ${s.sources && s.sources.length ? `<div class="scenario-meta" style="margin-top:6px">🔗 ${esc(s.sources.slice(0, 3).join(' · '))}${s.sources.length > 3 ? '…' : ''}</div>` : ''}
         </div>
         <div class="scenario-actions">
+          <button type="button" class="scenario-act-btn run" data-run-scenario="${s.id}" title="Запустить сейчас">⚡</button>
           <button type="button" class="scenario-act-btn" data-edit-scenario="${s.id}" title="Изменить">✏️</button>
           <button type="button" class="scenario-act-btn" data-copy-scenario="${s.id}" title="Дублировать">⧉</button>
           <button type="button" class="scenario-act-btn" data-toggle-scenario="${s.id}" title="${s.archived ? 'Активировать' : 'Деактивировать'}">${s.archived ? '▶️' : '⏸'}</button>
@@ -1265,7 +1266,33 @@ scenariosPanel.addEventListener('click', async (e) => {
   const copy = e.target.closest('[data-copy-scenario]');
   const toggle = e.target.closest('[data-toggle-scenario]');
   const del = e.target.closest('[data-del-scenario]');
+  const run = e.target.closest('[data-run-scenario]');
   if (close) { hideScenariosPanel(); return; }
+  if (run) {
+    const s = currentScenarios.find((x) => String(x.id) === run.dataset.runScenario);
+    if (!s) return;
+    const btn = run;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      showToast('Запускаем поиск…');
+      const data = await teamApi(`/search-run/${s.id}`, { method: 'POST' });
+      const entry = data && data.run;
+      if (entry && entry.status === 'error') showToast('Ошибка: ' + (entry.note || 'неизвестно'));
+      else showToast(entry.note || 'Запуск выполнен.');
+      if (activeTab === 'web') {
+        await fetchMentionsForProject();
+        renderMentions();
+        updateWebBadge();
+      }
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡';
+    }
+    return;
+  }
   if (edit) {
     const s = currentScenarios.find((x) => String(x.id) === edit.dataset.editScenario);
     openScenarioModal(s);

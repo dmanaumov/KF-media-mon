@@ -74,6 +74,30 @@
         }
       }
     },
+    "/api/cron/search-run": {
+      "post": {
+        "tags": ["Автоматизация"],
+        "summary": "Запустить поиск по сценариям через Yandex Search API",
+        "description": "Выполняет веб-поиск сам (использует YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID из env): строит запрос из ключевых слов и источников сценария, получает XML-выдачу Яндекса, фильтрует по негативным ключам и regex, сохраняет находки (как /api/cron/mentions) и пишет лог запуска (видный в «Логи поиска»). Без scenarioId обрабатывает все активные сценарии. `pages` — сколько страниц выдачи запросить (1–5).",
+        "security": [{ "automationApiKey": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SearchRunRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результаты запусков",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchRunResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
     "/api/cron/mentions": {
       "post": {
         "tags": ["Автоматизация"],
@@ -215,6 +239,21 @@
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
           "200": { "description": "Удалён", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ok" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Сценарий не найден" },
+          "502": { "$ref": "#/components/responses/DbError" }
+        }
+      }
+    },
+    "/api/team/search-run/{id}": {
+      "post": {
+        "tags": ["Кабинет команды"],
+        "summary": "Запустить сценарий прямо сейчас (кнопка «Запустить сейчас»)",
+        "description": "Выполняет поиск по сценарию через Yandex Search API (нужен ключ в env сервера), сохраняет новые упоминания и пишет запись в «Логи поиска».",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Результат запуска", "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" }, "run": { "$ref": "#/components/schemas/SearchRunEntry" } } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "404": { "description": "Сценарий не найден" },
           "502": { "$ref": "#/components/responses/DbError" }
@@ -610,11 +649,11 @@
             "maxItems": 500,
             "items": { "$ref": "#/components/schemas/ImportItem" }
           },
-          "providerName": { "type": "string", "default": "n8n", "description": "Кто разместил (visible createdBy)" },
+          "providerName": { "type": "string", "default": "auto", "description": "Кто разместил (visible createdBy)" },
           "projectId": { "type": "string", "description": "Общий проект для всех items" }
         },
         "example": {
-          "providerName": "n8n",
+          "providerName": "auto",
           "projectId": "project-42",
           "items": [
             { "url": "https://iz.ru/news/123", "source": "Известия", "title": "Клеверспорт открыл новый офис", "publishedAt": "2026-09-08", "sentiment": "positive", "eventType": "article", "comment": "открытие офиса в Москве" },
@@ -632,6 +671,37 @@
             "type": "array",
             "items": { "type": "object", "properties": { "index": { "type": "integer" }, "reason": { "type": "string" }, "message": { "type": "string" } } }
           }
+        }
+      },
+      "SearchRunRequest": {
+        "type": "object",
+        "properties": {
+          "scenarioId": { "type": "integer", "description": "Запустить только один сценарий; без поля — все активные" },
+          "pages": { "type": "integer", "minimum": 1, "maximum": 5, "default": 1, "description": "Сколько страниц выдачи Яндекса запросить" }
+        },
+        "example": { "pages": 1 }
+      },
+      "SearchRunResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "ran": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SearchRunEntry" }
+          }
+        }
+      },
+      "SearchRunEntry": {
+        "type": "object",
+        "properties": {
+          "scenarioId": { "type": "integer" },
+          "name": { "type": "string" },
+          "projectId": { "type": "string" },
+          "status": { "type": "string", "enum": ["ok", "error"] },
+          "found": { "type": "integer", "description": "Строк в выдаче до фильтров" },
+          "inserted": { "type": "integer", "description": "Новых упоминаний сохранено" },
+          "skipped": { "type": "integer", "description": "Дублей пропущено" },
+          "note": { "type": "string" }
         }
       },
       "SearchLog": {

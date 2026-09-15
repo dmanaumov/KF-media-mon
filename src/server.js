@@ -13,6 +13,7 @@ const { buildTasks, buildTaskDetail, projectOptions, statusOptions, assigneeOpti
 const scenarios = require('./scenarios');
 const searchLogs = require('./searchLogs');
 const sources = require('./sources');
+const yandexSearch = require('./yandexSearch');
 const acl = require('./acl');
 
 const app = express();
@@ -747,6 +748,134 @@ app.get('/api/cron/scenarios', async (req, res) => {
   }
 });
 
+// --- Cron: run scenarios through Yandex Search API ---
+// POST /api/cron/search-run  with header  X-Automation-Api-Key
+// Runs the web search itself (YANDEX_SEARCH_API_KEY/FOLDER_ID env): builds the
+// query from the scenario's keywords/sources, fetches the Yandex XML results,
+// filters by negative keywords and regex, persists findings via
+// /api/cron/mentions semantics and writes a run log.
+// Body: { scenarioId?, pages? }. Without scenarioId — runs every active
+// scenario. `pages` = number of result pages to fetch (default 1).
+function buildYandexQueryText(s) {
+  const kw = (s.keywords || []).map((k) => k.trim()).filter(Boolean).join(' ');
+  const sites = (s.sources || [])
+    .map((x) => String(x).trim())
+    .filter(Boolean)
+    .map((d) => (d.startsWith('site:') ? d : `site:${d}`))
+    .join(' ');
+  return [kw, sites].filter(Boolean).join(' ');
+}
+
+function filterYandexResults(results, s) {
+  let re = null;
+  if (s.regex) {
+    try { re = new RegExp(s.regex.replace(/^\/(.*)\/$/, '$1'), 'i'); } catch (e) { re = null; }
+  }
+  const neg = (s.negativeKeywords || []).map((k) => k.toLowerCase()).filter(Boolean);
+  return results.filter((r) => {
+    const hay = ((r.title || '') + ' ' + (r.snippet || '')).toLowerCase();
+    if (re && !re.test((r.title || '') + ' ' + (r.snippet || ''))) return false;
+    if (neg.some((k) => hay.includes(k))) return false;
+    return true;
+  });
+}
+
+// Shared: run a single scenario through Yandex Search API — searches, filters,
+// persists findings, writes a run log. Returns the run entry.
+async function runScenarioViaYandex(s, pages = 1) {
+  const entry = {
+    scenarioId: s.id,
+    name: s.name,
+    projectId: s.projectId,
+    status: 'ok',
+    found: 0,
+    inserted: 0,
+    skipped: 0,
+    dropped: [],
+  };
+  try {
+    const query = buildYandexQueryText(s) || s.name || 'запрос';
+    const all = [];
+    for (let p = 0; p < pages; p++) {
+      const xml = await yandexSearch.search(query, { page: p });
+      all.push(...yandexSearch.parseXmlResults(xml));
+    }
+    entry.found = all.length;
+    const kept = filterYandexResults(all, s);
+    if (!kept.length) {
+      entry.note = `Найдено в выдаче: ${all.length}, после фильтров: 0`;
+    } else {
+      const provider = { name: 'yandex-search', projectId: s.projectId };
+      const items = kept.map((r, i) => ({
+        projectId: s.projectId,
+        url: r.url,
+        source: yandexSearch.hostOf(r.url) || 'yandex',
+        title: r.title || '',
+        comment: r.snippet || '',
+        publishedAt: r.modtime ? r.modtime.toISOString() : null,
+        sourceType: 'auto',
+        eventType: 'article',
+        index: i,
+      }));
+      const imp = await mentions.importMentions(config.mattermostBoardId, provider, items);
+      entry.inserted = imp.inserted;
+      entry.skipped = imp.skipped;
+      entry.dropped = imp.dropped.slice(0, 20);
+      entry.note = `Найдено в выдаче: ${kept.length}, новых: ${imp.inserted}, дублей: ${imp.skipped}`;
+    }
+  } catch (err) {
+    entry.status = 'error';
+    entry.note = String((err && err.message) || err);
+    entry.error = entry.note;
+  }
+  try {
+    await searchLogs.insertLogs(config.mattermostBoardId, { name: 'auto' }, [
+      {
+        scenarioId: s.id,
+        scenarioName: s.name,
+        projectId: s.projectId,
+        status: entry.status,
+        note: entry.note,
+        severity: entry.status === 'error' ? 'important' : 'info',
+      },
+    ]);
+  } catch (err) {
+    console.error('[api] search-run log insert failed:', err.message);
+  }
+  return entry;
+}
+
+app.post('/api/cron/search-run', async (req, res) => {
+  const secret = config.automationApiKey;
+  if (!secret || req.get('X-Automation-Api-Key') !== secret) {
+    return res.status(401).json({ error: 'unauthorized', message: 'Missing or invalid X-Automation-Api-Key.' });
+  }
+  const body = req.body || {};
+  const pages = Math.max(1, Math.min(Number(body.pages) || 1, 5));
+  const scenarioId = body.scenarioId != null ? Number(body.scenarioId) : null;
+  try {
+    let targets;
+    if (scenarioId) {
+      const one = await scenarios.getScenario(scenarioId, config.mattermostBoardId);
+      targets = one ? [one] : [];
+    } else {
+      targets = await scenarios.listActiveScenarios(config.mattermostBoardId);
+    }
+    if (!targets.length) {
+      return res.json({ ok: true, ran: [] });
+    }
+
+    const ran = [];
+    for (const s of targets) {
+      ran.push(await runScenarioViaYandex(s, pages));
+    }
+    res.json({ ok: true, ran });
+  } catch (err) {
+    console.error('[api] /api/cron/search-run failed:', err.message);
+    res.status(502).json({ error: 'search_run_failed', message: err.message });
+  }
+});
+
 // --- Ingest: run reports from the external automation (n8n) ---
 // POST /api/cron/search-logs  with header  X-Automation-Api-Key
 // The automation reports that it ran a scenario: what came out of it and any
@@ -905,6 +1034,30 @@ app.delete('/api/team/sources/:id', teamAuth.requireTeamAuth, async (req, res) =
   } catch (err) {
     console.error('[api] /api/team/sources DELETE failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
+  }
+});
+
+// Run one scenario right now (вкладка WEB → «Запустить сейчас»). Uses the same
+// Yandex Search API pipeline as the cron runner; requires project access.
+app.post('/api/team/search-run/:id', teamAuth.requireTeamAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'bad_id', message: 'Некорректный id.' });
+  try {
+    const s = await scenarios.getScenario(id, config.mattermostBoardId);
+    if (!s) return res.status(404).json({ error: 'not_found', message: 'Сценарий не найден.' });
+    if (!(await requireProjectAccess(req, res, s.projectId))) return;
+    if (!yandexSearch.isConfigured()) {
+      return res.status(400).json({ error: 'yandex_not_configured', message: 'Yandex Search API не настроен (нет ключа в переменных окружения).' });
+    }
+    const entry = await runScenarioViaYandex(s, 1);
+    if (entry.status === 'error') {
+      res.json({ ok: false, run: entry });
+    } else {
+      res.json({ ok: true, run: entry });
+    }
+  } catch (err) {
+    console.error('[api] /api/team/search-run failed:', err.message);
+    res.status(502).json({ error: 'search_run_failed', message: err.message });
   }
 });
 

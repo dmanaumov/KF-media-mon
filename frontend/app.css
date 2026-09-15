@@ -224,6 +224,7 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .scenario-act-btn{width:28px;height:28px;padding:0;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;line-height:1;display:grid;place-items:center;cursor:pointer;transition:background .15s ease,border-color .15s ease}
 .scenario-act-btn:hover{background:#F2F6F5;border-color:#C7CECD}
 .scenario-act-btn.danger:hover{background:var(--urgent);border-color:var(--urgent)}
+.scenario-act-btn.run:hover{background:#E4F1EC;border-color:var(--accent)}
 .tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .tag{font-size:11px;font-weight:700;background:#EEF1F0;border-radius:999px;padding:4px 9px;color:#45514E}
 .tag.neg{background:#FBE0E0;color:#A12E2E}
@@ -381,6 +382,7 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .scenarios-panel{background:#262222}
   .scenario-act-btn{background:#222626;border-color:#2A3532}
   .scenario-act-btn:hover{background:#2C302E;border-color:#3A4140}
+  .scenario-act-btn.run:hover{background:#1F3A30;border-color:var(--accent)}
   .log-row{background:#262222}
   .log-note{background:#222626;color:#DDE3E1}
   .tag{background:#222626;color:#B7C2BE}
