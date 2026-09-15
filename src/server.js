@@ -800,7 +800,11 @@ async function runScenarioViaYandex(s, pages = 1) {
     const all = [];
     for (let p = 0; p < pages; p++) {
       const xml = await yandexSearch.search(query, { page: p });
-      log.debug('yandex-run', `page ${p}: xml length=${xml.length}, preview=${xml.slice(0, 500)}`);
+      const di = xml.indexOf('<doc');
+      log.debug('yandex-run', `page ${p}: xml length=${xml.length}, first <doc at=${di}`);
+      if (di >= 0) log.debug('yandex-run', `doc sample: ${xml.slice(di, di + 600)}`);
+      const ri = xml.indexOf('<response');
+      log.debug('yandex-run', `response body:\n${ri >= 0 ? xml.slice(ri) : xml}`);
       all.push(...yandexSearch.parseXmlResults(xml));
     }
     entry.found = all.length;

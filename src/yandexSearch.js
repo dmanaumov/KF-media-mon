@@ -80,7 +80,7 @@ function decodeXmlEntities(s) {
 function parseXmlResults(xml) {
   if (!xml) return [];
   const out = [];
-  const docRe = /<doc>([\s\S]*?)<\/doc>/gi;
+  const docRe = /<doc\b[^>]*>([\s\S]*?)<\/doc>/gi;
   let m;
   while ((m = docRe.exec(xml)) !== null) {
     const body = m[1];
