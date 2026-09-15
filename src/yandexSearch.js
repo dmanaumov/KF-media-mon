@@ -77,6 +77,23 @@ function decodeXmlEntities(s) {
 
 // Parse the Yandex XML results page: pull out every <doc> (url, title, first
 // passage, modtime when present).
+function stripTags(s) {
+  return String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Yandex modtime comes in two flavours: a unix epoch ("1710000000") or a
+// compact "YYYYMMDDThhmmss". Parse both; unknown → null.
+function parseModTime(raw) {
+  const s = String(raw || '').trim();
+  if (/^\d{10}$/.test(s)) {
+    const t = parseInt(s, 10) * 1000;
+    return Number.isFinite(t) && t > 0 ? new Date(t) : null;
+  }
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(s);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  return null;
+}
+
 function parseXmlResults(xml) {
   if (!xml) return [];
   const out = [];
@@ -90,16 +107,12 @@ function parseXmlResults(xml) {
     const titleM = /<title>([\s\S]*?)<\/title>/i.exec(body);
     const passM = /<passages>[\s\S]*?<passage>([\s\S]*?)<\/passage>/i.exec(body) ||
       /<passage>([\s\S]*?)<\/passage>/i.exec(body);
-    const modM = /<modtime[^>]*>([\d\s]*?)<\/modtime>/i.exec(body);
-    const modtime = modM ? parseInt(modM[1].trim(), 10) : NaN;
+    const modM = /<modtime[^>]*>([\s\S]*?)<\/modtime>/i.exec(body);
     out.push({
       url,
-      title: decodeXmlEntities(titleM ? titleM[1] : '').trim(),
-      snippet: decodeXmlEntities(passM ? passM[1] : '').trim()
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim(),
-      modtime: Number.isFinite(modtime) && modtime > 0 ? new Date(modtime * 1000) : null,
+      title: stripTags(decodeXmlEntities(titleM ? titleM[1] : '')),
+      snippet: stripTags(decodeXmlEntities(passM ? passM[1] : '')),
+      modtime: parseModTime(modM ? modM[1] : ''),
     });
   }
   return out;
