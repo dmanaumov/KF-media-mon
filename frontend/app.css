@@ -163,6 +163,11 @@ textarea.field-input{resize:vertical;font-family:inherit}
 @keyframes tabIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
 
 /* --- WEB tab: mentions --- */
+.web-filters{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.web-filters .period-select{margin-bottom:0}
+.web-filter-selects{display:flex;gap:8px;flex-wrap:wrap}
+.web-filter-selects .field-input{margin:0;width:auto;min-width:170px;padding-top:8px;padding-bottom:8px;font-size:12.5px}
+@media (max-width:640px){.web-filter-selects{width:100%}.web-filter-selects .field-input{flex:1 1 0;min-width:0}}
 .web-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .mention-card{cursor:pointer;transition:box-shadow .15s ease,transform .15s ease}
 .mention-card:hover{box-shadow:0 16px 34px rgba(16,45,42,.09);transform:translateY(-1px)}
@@ -309,6 +314,14 @@ textarea.field-input{resize:vertical;font-family:inherit}
 .task-chat-input-row{display:flex;gap:8px}
 .task-chat-input-row .field-input{margin:0}
 .task-chat-input-row .btn{flex:0 0 auto}
+.chat-mention{color:var(--accent);font-weight:800;background:rgba(0,70,67,.08);border-radius:6px;padding:0 3px}
+.mention-popup{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:30;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:6px;display:grid;gap:2px;max-height:280px;overflow:auto}
+.mention-popup[hidden]{display:none}
+.mention-item{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;border-radius:11px;padding:7px 9px;font:inherit;color:var(--ink);cursor:pointer;text-align:left}
+.mention-item:hover,.mention-item.active{background:rgba(0,70,67,.08)}
+.mention-name{font-size:13px;font-weight:700;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention-login{font-size:12px;color:var(--muted);font-weight:650}
+.chat-avatar.small{width:24px;height:24px;font-size:10px;box-shadow:none}
 
 @media(min-width:700px){.page{padding-top:28px}.card{border-radius:28px}}
 @media(max-width:430px){
@@ -398,6 +411,7 @@ textarea.field-input{resize:vertical;font-family:inherit}
   .task-upload-zone:hover{background:#202725;border-color:var(--accent)}
   .task-upload-hint{color:#6F7A77}
   .task-chat{border-color:#2A3532}
+  .chat-mention,.mention-item:hover,.mention-item.active{background:rgba(63,169,143,.16)}
   .chat-bubble{background:#262222}
   .chat-meta b{color:var(--ink)}
 }

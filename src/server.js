@@ -53,7 +53,10 @@ async function loadTeamMembers({ fresh = false } = {}) {
   if (!fresh && teamMembersCache.expires > Date.now()) return teamMembersCache.members;
   try {
     const members = await mm.listTeamMembers(config.teamId);
-    teamMembersCache = { members, expires: Date.now() + 5 * 60 * 1000 };
+    // An empty list is never cached — it would leave the assignee picker
+    // and @-mentions empty for 5 minutes after a transient MM hiccup.
+    if (members.length) teamMembersCache = { members, expires: Date.now() + 5 * 60 * 1000 };
+    else console.warn('[api] loadTeamMembers: Mattermost returned 0 team members');
     return members;
   } catch (err) {
     console.error('[api] loadTeamMembers failed:', err.message);
@@ -374,6 +377,73 @@ app.patch('/api/team/tasks/:id', teamAuth.requireTeamAuth, async (req, res) => {
   }
 });
 
+// --- @-mentions in card comments ---
+// The comment itself is written by the service account (as before); the
+// tag is "@username" in its text. Everyone tagged also gets a Mattermost
+// direct message FROM the person who wrote the comment (their own session
+// token) with the card title, the comment and a deep link to the card.
+// Best-effort: a failed DM never fails the comment.
+function extractMentionedUsernames(text) {
+  const names = new Set();
+  const re = /(^|[^\w.@])@([a-z0-9][a-z0-9._-]*)/gi;
+  let m;
+  while ((m = re.exec(text))) names.add(m[2].replace(/[._-]+$/, '').toLowerCase());
+  return [...names];
+}
+
+function publicBaseUrl(req) {
+  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  return `${proto}://${req.get('x-forwarded-host') || req.get('host')}`;
+}
+
+async function notifyCommentMentions(req, card, text) {
+  const session = req.teamSession || {};
+  const author = session.user || {};
+  const usernames = extractMentionedUsernames(text);
+  if (!usernames.length || !session.mmToken || !author.id) return [];
+  const members = await loadTeamMembers();
+  const targets = members.filter((m) => m.username && usernames.includes(m.username.toLowerCase()) && m.id !== author.id);
+  const link = `${publicBaseUrl(req)}/team#tasks?task=${encodeURIComponent(card.id)}`;
+  const authorName = [author.first_name, author.last_name].filter(Boolean).join(' ') || author.username || 'Коллега';
+  const quoted = text.split('\n').map((l) => `> ${l}`).join('\n');
+  const message = `🔔 ${authorName} упомянул(а) вас в задаче PR «${card.title || 'без названия'}»:\n${quoted}\n\n[Открыть карточку](${link})`;
+  const notified = [];
+  await Promise.all(targets.map(async (t) => {
+    try {
+      await mm.sendDirectMessage(session.mmToken, author.id, t.id, message);
+      notified.push(t.username);
+    } catch (err) {
+      console.error(`[api] mention DM to @${t.username} failed:`, err.message);
+    }
+  }));
+  return notified;
+}
+
+// Lightweight meta for the task modal (create mode + @-mention autocomplete):
+// does not depend on the task list having been loaded first.
+app.get('/api/team/tasks-meta', teamAuth.requireTeamAuth, async (req, res) => {
+  try {
+    const [{ board }, members, settingsMap] = await Promise.all([
+      loadBoard(config.mattermostBoardId),
+      loadTeamMembers(),
+      settingsMapSafe(),
+    ]);
+    let projectsList = projectOptions(board).filter((p) => !(settingsMap.get(p.id) || {}).archived);
+    projectsList = await narrowByAccess(req.teamSession.user, projectsList, (p) => p.id);
+    const assignee = assigneeOptions(board, members);
+    if (!assignee.options.length) console.warn('[api] tasks-meta: assignee list is empty (team members not loaded?)');
+    res.json({
+      statuses: statusOptions(board),
+      projects: projectsList,
+      assignee,
+      members: members.map((m) => ({ id: m.id, username: m.username, label: m.label })),
+    });
+  } catch (err) {
+    console.error('[api] GET /api/team/tasks-meta failed:', err.message);
+    res.status(502).json({ error: 'mattermost_unavailable', message: err.message });
+  }
+});
+
 app.post('/api/team/tasks/:id/comments', teamAuth.requireTeamAuth, async (req, res) => {
   try {
     const text = String((req.body && req.body.text) || '').trim();
@@ -386,7 +456,8 @@ app.post('/api/team/tasks/:id/comments', teamAuth.requireTeamAuth, async (req, r
       title: text, fields: {}, createAt: Date.now(), updateAt: Date.now(), deleteAt: 0,
     }]);
     invalidate();
-    res.json({ ok: true });
+    const notified = await notifyCommentMentions(req, card, text);
+    res.json({ ok: true, notified });
   } catch (err) {
     console.error('[api] POST /api/team/tasks/:id/comments failed:', err.message);
     res.status(502).json({ error: 'mattermost_write_failed', message: err.message });

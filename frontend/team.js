@@ -60,6 +60,7 @@ function readUrlState() {
   return {
     tab: VALID_TABS.has(tab) ? tab : null,
     project: params.get('project') || '',
+    task: params.get('task') || '',
   };
 }
 
@@ -88,10 +89,12 @@ function applyUrlState() {
     setActiveTab(activeTab);
   }
   syncUrl();
+  if (state.task) openTaskModal(state.task); // link from a mention DM: #tasks?task=<cardId>
 }
 
 function onHashChange() {
   const state = readUrlState();
+  if (state.task) { openTaskModal(state.task); syncUrl(); return; }
   if (state.tab && state.tab !== activeTab) applyUrlState();
   else if (state.project && state.project !== selectedProjectId) applyUrlState();
 }
@@ -154,6 +157,8 @@ const mentionUrl = document.getElementById('mentionUrl');
 const mentionSource = document.getElementById('mentionSource');
 const mentionDate = document.getElementById('mentionDate');
 const mentionEventType = document.getElementById('mentionEventType');
+const mentionSpeaker = document.getElementById('mentionSpeaker');
+const mentionSpeakerList = document.getElementById('mentionSpeakerList');
 const mentionSentiment = document.getElementById('mentionSentiment');
 const mentionUrgent = document.getElementById('mentionUrgent');
 const mentionComment = document.getElementById('mentionComment');
@@ -643,6 +648,32 @@ function commentTime(ts) {
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// ==================== Modal meta (assignees, team members for @-tags) ====================
+// Loaded from its own endpoint so the create modal and @-autocomplete work
+// even if the task list hasn't loaded yet (e.g. "+ Добавить задачу" on СМИ).
+let modalMeta = null;
+let modalMetaPromise = null;
+function ensureModalMeta(force) {
+  if (modalMeta && !force) return Promise.resolve(modalMeta);
+  if (!modalMetaPromise || force) {
+    modalMetaPromise = teamApi('/tasks-meta')
+      .then((m) => { modalMeta = m; return m; })
+      .catch((err) => { modalMetaPromise = null; throw err; });
+  }
+  return modalMetaPromise;
+}
+function mentionMembers() {
+  return (modalMeta && modalMeta.members) || [];
+}
+function highlightMentions(text) {
+  const known = new Set(mentionMembers().map((m) => String(m.username || '').toLowerCase()));
+  return esc(text).replace(/(^|[^\w.@])@([a-z0-9][a-z0-9._-]*)/gi, (all, pre, name) => {
+    const clean = name.replace(/[._-]+$/, '');
+    if (known.size && !known.has(clean.toLowerCase())) return all;
+    return `${pre}<span class="chat-mention">@${clean}</span>${name.slice(clean.length)}`;
+  });
+}
+
 function renderComments(comments) {
   if (!comments || !comments.length) {
     taskCommentList.innerHTML = '<div class="task-chat-empty">Пока нет сообщений — начните обсуждение.</div>';
@@ -653,7 +684,7 @@ function renderComments(comments) {
       <div class="chat-avatar">${esc(commentInitials(c.author))}</div>
       <div class="chat-bubble">
         <div class="chat-meta"><b>${esc(c.author)}</b><span>${esc(commentTime(c.createdAt))}</span></div>
-        <div class="chat-text">${esc(c.text)}</div>
+        <div class="chat-text">${highlightMentions(c.text)}</div>
       </div>
     </div>
   `).join('');
@@ -703,7 +734,12 @@ async function openTaskModal(taskId) {
     taskModalLoading.hidden = true;
     taskModalBody.hidden = false;
     taskModalSave.disabled = false;
-    fillTaskForm(data.task, data.meta);
+    let meta = data.meta || {};
+    try {
+      const m = await ensureModalMeta();
+      if (!(meta.assignee && meta.assignee.options && meta.assignee.options.length)) meta = { ...meta, assignee: m.assignee };
+    } catch (e) { /* meta is optional here */ }
+    fillTaskForm(data.task, meta);
   } catch (err) {
     taskModalLoading.hidden = true;
     showToast('Не удалось открыть карточку: ' + err.message);
@@ -734,6 +770,16 @@ function openCreateTaskModal(prefill) {
   taskUrl.value = '';
   taskText.value = '';
   taskTitle.focus();
+  ensureModalMeta(!(meta.assignee && meta.assignee.options && meta.assignee.options.length)).then((m) => {
+    if (taskModalMode !== 'create' || taskModalOverlay.hidden) return;
+    const keep = { s: taskStatus.value, p: taskProject.value, a: taskAssignee.value };
+    if (m.statuses && m.statuses.length) fillSelect(taskStatus, m.statuses, keep.s || null, null);
+    if (m.projects && m.projects.length) fillSelect(taskProject, m.projects, keep.p || null, null);
+    fillSelect(taskAssignee, m.assignee && m.assignee.options, keep.a || null, '—');
+    if (!(m.assignee && m.assignee.options && m.assignee.options.length)) {
+      showToast('Не удалось загрузить список сотрудников из Mattermost — ответственного можно будет назначить позже.');
+    }
+  }).catch((err) => showToast('Не удалось загрузить список сотрудников: ' + err.message));
 }
 
 function closeTaskModal() {
@@ -792,8 +838,12 @@ taskCommentSend.addEventListener('click', async () => {
   if (!text || !openTaskId) return;
   taskCommentSend.disabled = true;
   try {
-    await teamApi(`/tasks/${encodeURIComponent(openTaskId)}/comments`, { method: 'POST', body: { text } });
+    const sent = await teamApi(`/tasks/${encodeURIComponent(openTaskId)}/comments`, { method: 'POST', body: { text } });
     taskCommentInput.value = '';
+    closeMentionPopup();
+    if (sent && sent.notified && sent.notified.length) {
+      showToast('Уведомление в Mattermost: ' + sent.notified.map((u) => '@' + u).join(', '));
+    }
     const data = await teamApi(`/tasks/${encodeURIComponent(openTaskId)}`);
     renderComments(data.task.comments);
   } catch (err) {
@@ -802,7 +852,102 @@ taskCommentSend.addEventListener('click', async () => {
     taskCommentSend.disabled = false;
   }
 });
-taskCommentInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') taskCommentSend.click(); });
+taskCommentInput.addEventListener('keydown', (e) => {
+  if (mentionPopupHandleKey(e)) return;
+  if (e.key === 'Enter') taskCommentSend.click();
+});
+
+// ==================== @-mention autocomplete in the comment box ====================
+const mentionPopup = document.createElement('div');
+mentionPopup.className = 'mention-popup';
+mentionPopup.hidden = true;
+taskCommentInput.parentElement.style.position = 'relative';
+taskCommentInput.parentElement.appendChild(mentionPopup);
+let mentionItems = [];
+let mentionActive = 0;
+let mentionRange = null; // {start, end} of the "@query" being typed
+
+function closeMentionPopup() {
+  mentionPopup.hidden = true;
+  mentionItems = [];
+  mentionRange = null;
+}
+
+function currentMentionQuery() {
+  const pos = taskCommentInput.selectionStart || 0;
+  const before = taskCommentInput.value.slice(0, pos);
+  const m = /(^|[^\w.@])@([^\s@]*)$/.exec(before);
+  if (!m) return null;
+  return { query: m[2], start: pos - m[2].length - 1, end: pos };
+}
+
+function renderMentionPopup() {
+  mentionPopup.innerHTML = mentionItems.map((m, i) => `
+    <button type="button" class="mention-item${i === mentionActive ? ' active' : ''}" data-i="${i}">
+      <span class="chat-avatar small">${esc(commentInitials(m.label))}</span>
+      <span class="mention-name">${esc(m.label)}</span>
+      <span class="mention-login">@${esc(m.username)}</span>
+    </button>`).join('');
+  mentionPopup.hidden = !mentionItems.length;
+}
+
+async function updateMentionPopup() {
+  const q = currentMentionQuery();
+  if (!q) { closeMentionPopup(); return; }
+  try { await ensureModalMeta(); } catch (e) { closeMentionPopup(); return; }
+  const needle = q.query.toLowerCase();
+  mentionItems = mentionMembers()
+    .filter((m) => m.username && (!needle || m.username.toLowerCase().includes(needle) || String(m.label || '').toLowerCase().includes(needle)))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), 'ru'))
+    .slice(0, 8);
+  mentionActive = 0;
+  mentionRange = { start: q.start, end: q.end };
+  renderMentionPopup();
+}
+
+function pickMention(i) {
+  const m = mentionItems[i];
+  if (!m || !mentionRange) return;
+  const v = taskCommentInput.value;
+  const insert = `@${m.username} `;
+  taskCommentInput.value = v.slice(0, mentionRange.start) + insert + v.slice(mentionRange.end);
+  const caret = mentionRange.start + insert.length;
+  taskCommentInput.setSelectionRange(caret, caret);
+  taskCommentInput.focus();
+  closeMentionPopup();
+}
+
+function mentionPopupHandleKey(e) {
+  if (mentionPopup.hidden || !mentionItems.length) return false;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionActive = (mentionActive + (e.key === 'ArrowDown' ? 1 : -1) + mentionItems.length) % mentionItems.length;
+    renderMentionPopup();
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    pickMention(mentionActive);
+    return true;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMentionPopup();
+    return true;
+  }
+  return false;
+}
+
+taskCommentInput.addEventListener('input', updateMentionPopup);
+taskCommentInput.addEventListener('click', updateMentionPopup);
+taskCommentInput.addEventListener('blur', () => setTimeout(closeMentionPopup, 150));
+mentionPopup.addEventListener('mousedown', (e) => {
+  const btn = e.target.closest('.mention-item');
+  if (!btn) return;
+  e.preventDefault();
+  pickMention(Number(btn.dataset.i));
+});
 
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 function readFileAsBase64(file) {
@@ -868,7 +1013,7 @@ function updateWebBadge() {
 
 const SENTIMENT_LABEL = { positive: 'Позитив', neutral: 'Нейтрально', negative: 'Негатив' };
 const SENTIMENT_CLASS = { positive: 'published', neutral: 'gray', negative: 'rejected' };
-const EVENT_TYPE_LABEL = { article: 'Статья / публикация', news: 'Новость' };
+const EVENT_TYPE_LABEL = { article: 'Статья / публикация', news: 'Новость', comment: 'Комментарий' };
 
 function mentionCardHtml(m) {
   const isAlert = m.sentiment === 'negative' || m.urgent;
@@ -877,6 +1022,7 @@ function mentionCardHtml(m) {
   const metaBits = [
     m.title && m.source ? `📰 ${esc(m.source)}` : '',
     m.publishedAt ? `🗓 ${deadlineLabel(m.publishedAt)}` : '',
+    m.speaker ? `🎙 ${esc(m.speaker)}` : '',
     m.createdBy ? `👤 ${esc(m.createdBy)}` : '',
   ].filter(Boolean).join('  ·  ');
   return `
@@ -899,16 +1045,79 @@ function mentionCardHtml(m) {
   `;
 }
 
+// ==================== СМИ: фильтры ====================
+// Происхождение упоминания:
+//   «Найдено в сети»     — нашла автоматизация (source_type ≠ manual: n8n / поиск по сценариям);
+//   «Наши публикации»    — внесены командой вручную, тип «Статья / публикация» или «Комментарий»;
+//   «Новостной поток»    — внесены вручную, тип «Новость».
+const WEB_FILTER_KEY = 'kfpr.webFilters';
+let webFilters = { origin: 'all', event: '', speaker: '' };
+try { webFilters = { ...webFilters, ...JSON.parse(localStorage.getItem(WEB_FILTER_KEY) || '{}') }; } catch (e) {}
+const webOriginFilter = document.getElementById('webOriginFilter');
+const webEventFilter = document.getElementById('webEventFilter');
+const webSpeakerFilter = document.getElementById('webSpeakerFilter');
+
+function mentionOrigin(m) {
+  if ((m.sourceType || 'manual') !== 'manual') return 'found';
+  return m.eventType === 'news' ? 'news' : 'ours';
+}
+
+function saveWebFilters() {
+  try { localStorage.setItem(WEB_FILTER_KEY, JSON.stringify(webFilters)); } catch (e) {}
+}
+
+function renderWebFilterControls() {
+  const counts = { all: currentMentions.length, ours: 0, news: 0, found: 0 };
+  currentMentions.forEach((m) => { counts[mentionOrigin(m)]++; });
+  [...webOriginFilter.children].forEach((b) => {
+    const key = b.dataset.origin;
+    b.classList.toggle('active', key === webFilters.origin);
+    if (!b.dataset.label) b.dataset.label = b.textContent;
+    b.textContent = `${b.dataset.label} · ${counts[key] || 0}`;
+  });
+  webEventFilter.value = webFilters.event || '';
+  const speakers = [...new Set(currentMentions.map((m) => (m.speaker || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+  if (webFilters.speaker && !speakers.includes(webFilters.speaker)) speakers.unshift(webFilters.speaker);
+  webSpeakerFilter.innerHTML = '<option value="">Все спикеры</option>' +
+    speakers.map((n) => `<option value="${esc(n)}"${n === webFilters.speaker ? ' selected' : ''}>🎙 ${esc(n)}</option>`).join('');
+  webSpeakerFilter.disabled = !speakers.length;
+}
+
+function filteredMentions() {
+  return currentMentions.filter((m) =>
+    (webFilters.origin === 'all' || mentionOrigin(m) === webFilters.origin) &&
+    (!webFilters.event || (m.eventType || 'news') === webFilters.event) &&
+    (!webFilters.speaker || (m.speaker || '').trim() === webFilters.speaker));
+}
+
+webOriginFilter.addEventListener('click', (e) => {
+  const b = e.target.closest('.period-btn');
+  if (!b) return;
+  webFilters.origin = b.dataset.origin;
+  saveWebFilters();
+  renderMentions();
+});
+webEventFilter.addEventListener('change', () => { webFilters.event = webEventFilter.value; saveWebFilters(); renderMentions(); });
+webSpeakerFilter.addEventListener('change', () => { webFilters.speaker = webSpeakerFilter.value; saveWebFilters(); renderMentions(); });
+
 function renderMentions() {
   webScopeHint.textContent = selectedProjectId ? `Проект: ${projectLabelFor(selectedProjectId)}` : '';
+  renderWebFilterControls();
   if (!currentMentions.length) {
     webEmpty.textContent = 'Пока нет ни одного упоминания. Добавьте первое вручную — кнопка выше.';
     webEmpty.hidden = false;
     webList.innerHTML = '';
     return;
   }
+  const list = filteredMentions();
+  if (!list.length) {
+    webEmpty.textContent = 'Под выбранные фильтры ничего не подходит.';
+    webEmpty.hidden = false;
+    webList.innerHTML = '';
+    return;
+  }
   webEmpty.hidden = true;
-  webList.innerHTML = currentMentions.map((m) => {
+  webList.innerHTML = list.map((m) => {
     try {
       return mentionCardHtml(m);
     } catch (err) {
@@ -957,6 +1166,10 @@ function openMentionModal(mention) {
   mentionSource.value = mention ? mention.source : '';
   mentionDate.value = mention ? mention.publishedAt : '';
   mentionEventType.value = mention ? (mention.eventType || 'news') : 'news';
+  mentionSpeaker.value = mention ? (mention.speaker || '') : '';
+  // Подсказки — спикеры, уже встречавшиеся в упоминаниях этого проекта.
+  const knownSpeakers = [...new Set(currentMentions.map((x) => (x.speaker || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+  mentionSpeakerList.innerHTML = knownSpeakers.map((n) => `<option value="${esc(n)}"></option>`).join('');
   mentionSentiment.value = mention ? mention.sentiment : 'neutral';
   mentionUrgent.checked = mention ? mention.urgent : false;
   mentionComment.value = mention ? mention.comment : '';
@@ -987,6 +1200,7 @@ mentionSaveBtn.addEventListener('click', async () => {
     source: mentionSource.value.trim(),
     publishedAt: mentionDate.value || null,
     eventType: mentionEventType.value,
+    speaker: mentionSpeaker.value.trim(),
     sentiment: mentionSentiment.value,
     urgent: mentionUrgent.checked,
     comment: mentionComment.value.trim(),

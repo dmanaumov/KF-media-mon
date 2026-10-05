@@ -616,7 +616,7 @@
           "publishedAt": { "type": "string", "format": "date" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
           "urgent": { "type": "boolean" },
-          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
+          "eventType": { "type": "string", "enum": ["article", "news", "comment"], "default": "news", "description": "Тип события: статья/публикация (article), новость (news) или комментарий (comment)." }, "speaker": { "type": "string", "description": "Спикер клиента, который дал комментарий / фигурирует в публикации." },
           "comment": { "type": "string", "description": "Краткая информация/сниппет" },
           "createdBy": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" }
@@ -632,7 +632,7 @@
           "publishedAt": { "type": "string", "format": "date" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
           "urgent": { "type": "boolean" },
-          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
+          "eventType": { "type": "string", "enum": ["article", "news", "comment"], "default": "news", "description": "Тип события: статья/публикация (article), новость (news) или комментарий (comment)." }, "speaker": { "type": "string", "description": "Спикер клиента, который дал комментарий / фигурирует в публикации." },
           "comment": { "type": "string" }
         }
       },
@@ -649,7 +649,7 @@
           "comment": { "type": "string", "description": "Краткая информация/сниппет" },
           "publishedAt": { "type": "string", "format": "date", "example": "2026-09-08" },
           "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
-          "eventType": { "type": "string", "enum": ["article", "news"], "default": "news", "description": "Тип события: статья/публикация (article) или новость (news)." },
+          "eventType": { "type": "string", "enum": ["article", "news", "comment"], "default": "news", "description": "Тип события: статья/публикация (article), новость (news) или комментарий (comment)." }, "speaker": { "type": "string", "description": "Спикер клиента, который дал комментарий / фигурирует в публикации." },
           "urgent": { "type": "boolean" },
           "sourceType": { "type": "string", "default": "auto" }
         }

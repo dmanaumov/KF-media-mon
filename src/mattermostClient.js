@@ -339,6 +339,25 @@ async function getFile(teamId, boardId, fileId) {
   return res;
 }
 
+// Direct message FROM a real team member (their own MM session token, not
+// the service account) — used to notify people @-tagged in a card comment.
+async function sendDirectMessage(userToken, fromUserId, toUserId, message) {
+  const headers = {
+    Authorization: `Bearer ${userToken}`,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Content-Type': 'application/json',
+  };
+  const chRes = await fetchWithTimeout(`${config.mattermostUrl}/api/v4/channels/direct`, {
+    method: 'POST', headers, body: JSON.stringify([fromUserId, toUserId]),
+  });
+  const channel = await asJsonOrThrow(chRes, `createDirectChannel(${toUserId})`);
+  if (!channel || !channel.id) throw new Error('[mattermost] createDirectChannel: no channel id');
+  const postRes = await fetchWithTimeout(`${config.mattermostUrl}/api/v4/posts`, {
+    method: 'POST', headers, body: JSON.stringify({ channel_id: channel.id, message }),
+  });
+  return asJsonOrThrow(postRes, `createPost(dm ${toUserId})`);
+}
+
 module.exports = {
   listTeamBoards,
   getBoard,
@@ -352,4 +371,5 @@ module.exports = {
   listTeamMembers,
   uploadFile,
   getFile,
+  sendDirectMessage,
 };

@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css?v=mentions2">
 </head>
 <body>
   <div class="page">
@@ -111,6 +111,25 @@
             <button type="button" class="mini-icon-btn" id="searchLogsBtn" title="Логи поиска" aria-label="Логи поиска">🗒</button>
           </div>
         </div>
+        <div class="web-filters" id="webFilters">
+          <div class="period-select web-origin" id="webOriginFilter">
+            <button type="button" class="period-btn active" data-origin="all">Все</button>
+            <button type="button" class="period-btn" data-origin="ours">📰 Наши публикации</button>
+            <button type="button" class="period-btn" data-origin="news">🗞 Новостной поток</button>
+            <button type="button" class="period-btn" data-origin="found">🔎 Найдено в сети</button>
+          </div>
+          <div class="web-filter-selects">
+            <select class="field-input small" id="webEventFilter" title="Тип события">
+              <option value="">Все типы событий</option>
+              <option value="news">Новость</option>
+              <option value="article">Статья / публикация</option>
+              <option value="comment">Комментарий</option>
+            </select>
+            <select class="field-input small" id="webSpeakerFilter" title="Спикер">
+              <option value="">Все спикеры</option>
+            </select>
+          </div>
+        </div>
         <div class="scenarios-panel" id="scenariosPanel" hidden></div>
         <div class="loading" id="webLoading" hidden>Загружаем упоминания…</div>
         <div class="stack" id="webList"></div>
@@ -200,7 +219,7 @@
               <div class="field-label">💬 Обсуждение</div>
               <div class="task-chat-list" id="taskCommentList"></div>
               <div class="task-chat-input-row">
-                <input class="field-input" id="taskCommentInput" type="text" placeholder="Написать комментарий…">
+                <input class="field-input" id="taskCommentInput" type="text" placeholder="Комментарий… @ — отметить коллегу">
                 <button type="button" class="btn approve small" id="taskCommentSend">Отправить</button>
               </div>
             </div>
@@ -231,6 +250,7 @@
             <select class="field-input" id="mentionEventType">
               <option value="news" selected>Новость</option>
               <option value="article">Статья / публикация</option>
+              <option value="comment">Комментарий</option>
             </select>
           </div>
           <div>
@@ -242,6 +262,9 @@
             </select>
           </div>
         </div>
+        <div class="field-label">🎙 Спикер</div>
+        <input class="field-input" id="mentionSpeaker" type="text" list="mentionSpeakerList" placeholder="Кто из спикеров клиента — например, Иван Петров">
+        <datalist id="mentionSpeakerList"></datalist>
         <label class="check-row">
           <input type="checkbox" id="mentionUrgent">
           <span>🚨 Срочно — требует немедленного внимания</span>
@@ -369,6 +392,6 @@
 
     <div class="toast" id="toast" role="status"></div>
   </div>
-  <script src="/team.js"></script>
+  <script src="/team.js?v=mentions2"></script>
 </body>
 </html>
