@@ -168,11 +168,11 @@ const mentionDeleteBtn = document.getElementById('mentionDeleteBtn');
 
 const toast = document.getElementById('toast');
 
-function showToast(msg) {
+function showToast(msg, ms) {
   toast.textContent = msg;
   toast.classList.add('show');
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => toast.classList.remove('show'), 3200);
+  showToast._t = setTimeout(() => toast.classList.remove('show'), ms || 3200);
 }
 
 async function teamApi(path, opts) {
@@ -185,7 +185,12 @@ async function teamApi(path, opts) {
   let data = {};
   try { data = await res.json(); } catch (e) {}
   if (res.status === 401) { showLogin(); throw new Error('Сессия истекла.'); }
-  if (!res.ok) throw new Error(data.message || data.error || 'Ошибка запроса');
+  if (!res.ok) {
+    const err = new Error(data.message || data.error || 'Ошибка запроса');
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 
@@ -1215,7 +1220,15 @@ mentionSaveBtn.addEventListener('click', async () => {
     closeMentionModal();
     await afterMentionsChanged();
   } catch (err) {
-    showToast(err.message);
+    const existing = err.status === 409 && err.data && err.data.mention;
+    if (existing && existing.id !== editingMentionId) {
+      // Same URL already logged (maybe by auto-search) — open that one instead.
+      await afterMentionsChanged();
+      openMentionModal(existing);
+      showToast('Такая ссылка уже есть в проекте — открыто существующее упоминание.', 6000);
+    } else {
+      showToast(err.message, 6000);
+    }
   } finally {
     mentionSaveBtn.disabled = false;
   }

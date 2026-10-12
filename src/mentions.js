@@ -67,6 +67,19 @@ async function createMention(boardId, projectId, data, createdBy) {
   return rowToMention(rows[0]);
 }
 
+// Existing mention with the same URL in this project (unique index
+// mentions_url_unique) — used to turn a 23505 into a friendly 409.
+async function findMentionByUrl(boardId, projectId, url) {
+  const u = String(url || '').trim().slice(0, 1000);
+  if (!u) return null;
+  const pool = db.requirePool();
+  const { rows } = await pool.query(
+    'SELECT * FROM mentions WHERE board_id = $1 AND project_id = $2 AND url = $3 LIMIT 1',
+    [boardId, projectId, u]
+  );
+  return rows[0] ? rowToMention(rows[0]) : null;
+}
+
 async function updateMention(id, boardId, projectId, data) {
   const pool = db.requirePool();
   const { rows } = await pool.query(
@@ -225,4 +238,4 @@ async function countsByProject(boardId, projectIds) {
   return map;
 }
 
-module.exports = { listMentions, createMention, updateMention, deleteMention, importMentions, monthlyStats, countsByProject, SENTIMENTS, EVENT_TYPES };
+module.exports = { listMentions, findMentionByUrl, createMention, updateMention, deleteMention, importMentions, monthlyStats, countsByProject, SENTIMENTS, EVENT_TYPES };

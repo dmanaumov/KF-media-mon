@@ -527,6 +527,18 @@ app.get('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
   }
 });
 
+// Unique (board, project, url) violation → 409 with the existing mention so
+// the UI can open it instead of showing a raw Postgres error.
+async function sendDuplicateMention(res, project, url) {
+  let existing = null;
+  try { existing = await mentions.findMentionByUrl(config.mattermostBoardId, project, url); } catch (e) { /* ignore */ }
+  return res.status(409).json({
+    error: 'duplicate',
+    message: 'Упоминание с этой ссылкой уже есть в проекте.',
+    mention: existing,
+  });
+}
+
 app.post('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
   const project = requireProjectParam(req, res);
   if (!project) return;
@@ -537,6 +549,7 @@ app.post('/api/team/mentions', teamAuth.requireTeamAuth, async (req, res) => {
     const m = await mentions.createMention(config.mattermostBoardId, project, req.body || {}, createdBy);
     res.json({ mention: m });
   } catch (err) {
+    if (err && err.code === '23505') return sendDuplicateMention(res, project, (req.body || {}).url);
     console.error('[api] /api/team/mentions POST failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
@@ -551,6 +564,7 @@ app.put('/api/team/mentions/:id', teamAuth.requireTeamAuth, async (req, res) => 
     if (!m) return res.status(404).json({ error: 'not_found', message: 'Упоминание не найдено.' });
     res.json({ mention: m });
   } catch (err) {
+    if (err && err.code === '23505') return sendDuplicateMention(res, project, (req.body || {}).url);
     console.error('[api] /api/team/mentions PUT failed:', err.message);
     res.status(502).json({ error: 'db_error', message: err.message });
   }
