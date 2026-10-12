@@ -139,9 +139,16 @@ function statusOptions(board) {
 // both: if the property has its own options, those are the only valid
 // values (write via optionIdByLabel); otherwise fall back to the live
 // Mattermost team member list so there's still something to pick from.
+// Focalboard keeps a property's `options` array even after its type is
+// switched to `person` (or "New group" options get added from the board UI),
+// so leftover options must be ignored unless the property is really a select.
+function isSelectProp(prop) {
+  return !!prop && (prop.type === 'select' || prop.type === 'multiSelect') && (prop.options || []).length > 0;
+}
+
 function assigneeLabel(assigneeProp, rawValue, membersById) {
   if (!rawValue) return null;
-  const byOption = optionLabelById(assigneeProp, rawValue);
+  const byOption = isSelectProp(assigneeProp) ? optionLabelById(assigneeProp, rawValue) : null;
   if (byOption) return byOption;
   const member = membersById && membersById.get(rawValue);
   return member ? member.label : null;
@@ -149,7 +156,7 @@ function assigneeLabel(assigneeProp, rawValue, membersById) {
 
 function assigneeOptions(board, members) {
   const prop = findPropertyDef(board, config.assigneePropertyName);
-  if (prop && (prop.options || []).length) {
+  if (isSelectProp(prop)) {
     return { kind: 'select', options: prop.options.map((o) => ({ id: o.id, label: o.value })) };
   }
   return { kind: 'person', options: (members || []).map((m) => ({ id: m.id, label: m.label })) };
